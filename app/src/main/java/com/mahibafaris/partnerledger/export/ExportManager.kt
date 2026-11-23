@@ -19,6 +19,11 @@ import javax.crypto.spec.SecretKeySpec
 
 object ExportManager {
 
+    private fun csvCell(text: String): String {
+        val cleaned = text.replace('"', '\'').replace(',', ' ').replace('\n', ' ')
+        return "\"$cleaned\""
+    }
+
     fun shareNumberedStatementPdf(context: Context, biz: BusinessConfig, stmt: StatementSnapshot) {
         val pdf = PdfDocument()
         val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
@@ -125,15 +130,39 @@ object ExportManager {
             val pName = pMap[e.partnerId]?.name ?: ""
             val cName = cMap[e.categoryId]?.name ?: ""
             val paidBy = if (e.paidByPartnerId == null) "Business Cash" else (pMap[e.paidByPartnerId]?.name ?: "Partner")
-            val note = e.note.replace(""", "'").replace(",", " ")
-            sb.appendLine("${e.id},$status,${e.type.name},${e.date},"$pName","$cName","${e.vendorOrSource}",${e.amount},${biz.currency},${e.paymentMethod},"$paidBy",${e.hasProof},"$note",${fmt.format(Date(e.createdAt))}")
+            sb.appendLine(
+                listOf(
+                    e.id,
+                    status,
+                    e.type.name,
+                    e.date,
+                    csvCell(pName),
+                    csvCell(cName),
+                    csvCell(e.vendorOrSource),
+                    e.amount.toString(),
+                    biz.currency,
+                    e.paymentMethod,
+                    csvCell(paidBy),
+                    e.hasProof.toString(),
+                    csvCell(e.note),
+                    fmt.format(Date(e.createdAt))
+                ).joinToString(",")
+            )
         }
         sb.appendLine()
         sb.appendLine("AUDIT_ID,ACTION,RECORD_TYPE,RECORD_ID,OLD_VALUE,NEW_VALUE,TIMESTAMP")
         state.auditLogs.forEach { log ->
-            val oldV = log.oldValue.replace(""", "'").replace(",", " ")
-            val newV = log.newValue.replace(""", "'").replace(",", " ")
-            sb.appendLine("${log.id},${log.action},${log.recordType},${log.recordId},"$oldV","$newV",${fmt.format(Date(log.timestamp))}")
+            sb.appendLine(
+                listOf(
+                    log.id,
+                    log.action,
+                    log.recordType,
+                    log.recordId,
+                    csvCell(log.oldValue),
+                    csvCell(log.newValue),
+                    fmt.format(Date(log.timestamp))
+                ).joinToString(",")
+            )
         }
 
         val safe = biz.businessName.replace(Regex("[^A-Za-z0-9]"), "_")
