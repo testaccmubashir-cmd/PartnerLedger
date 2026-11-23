@@ -2,12 +2,13 @@ package com.mahibafaris.partnerledger.export
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Paint
-import android.graphics.Typeface
+import android.graphics.*
 import android.graphics.pdf.PdfDocument
+import android.net.Uri
 import android.util.Base64
 import androidx.core.content.FileProvider
 import com.mahibafaris.partnerledger.model.*
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
@@ -24,6 +25,190 @@ object ExportManager {
         return "\"$cleaned\""
     }
 
+    // ---- Receipt Image Helpers ----
+    fun compressBitmapToBase64(bitmap: Bitmap, maxDim: Int = 900, quality: Int = 70): String {
+        val ratio = minOf(maxDim.toFloat() / bitmap.width, maxDim.toFloat() / bitmap.height, 1f)
+        val scaled = if (ratio < 1f) {
+            Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * ratio).toInt().coerceAtLeast(1),
+                (bitmap.height * ratio).toInt().coerceAtLeast(1),
+                true
+            )
+        } else bitmap
+
+        val baos = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+        return Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+    }
+
+    fun compressUriToBase64(context: Context, uri: Uri): String? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val bmp = BitmapFactory.decodeStream(stream) ?: return null
+                compressBitmapToBase64(bmp)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun decodeBase64ToBitmap(base64: String): Bitmap? {
+        if (base64.isBlank()) return null
+        return try {
+            val bytes = Base64.decode(base64, Base64.NO_WRAP)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // ---- WhatsApp Shareable Image Statements (PNG) ----
+    fun shareStatementAsImage(context: Context, biz: BusinessConfig, stmt: StatementSnapshot) {
+        val width = 1080
+        val rowHeight = 115
+        val height = (760 + stmt.partnerLines.size * rowHeight + 140).coerceAtLeast(1080)
+        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        c.drawColor(Color.parseColor("#F6F8F7"))
+
+        // Header Banner
+        val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1B4D3E") }
+        c.drawRect(0f, 0f, width.toFloat(), 240f, headerPaint)
+
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; textSize = 52f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#D1FAE5"); textSize = 30f
+        }
+        val goldPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#F59E0B"); textSize = 28f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        c.drawText(biz.businessName, 56f, 96f, titlePaint)
+        c.drawText("STATEMENT #${stmt.number}  •  AS OF ${stmt.asOfDate}", 56f, 152f, goldPaint)
+        c.drawText("Prepared by ${biz.adminName}  |  Currency: ${biz.currency}", 56f, 200f, subPaint)
+
+        // Summary Card
+        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        val sectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#111827"); textSize = 34f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#6B7280"); textSize = 28f
+        }
+        val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#111827"); textSize = 32f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val greenVal = Paint(valuePaint).apply { color = Color.parseColor("#15803D") }
+        val redVal = Paint(valuePaint).apply { color = Color.parseColor("#B91C1C") }
+
+        c.drawRoundRect(RectF(44f, 276f, width - 44f, 670f), 28f, 28f, cardPaint)
+        c.drawText("Business Summary", 80f, 336f, sectionPaint)
+
+        fun drawMetric(label: String, value: String, x: Float, y: Float, p: Paint = valuePaint) {
+            c.drawText(label, x, y, labelPaint)
+            c.drawText(value, x, y + 40f, p)
+        }
+
+        drawMetric("Total Invested", formatMoney(biz.currency, stmt.totalInvested), 80f, 396f, greenVal)
+        drawMetric("Total Revenue", formatMoney(biz.currency, stmt.totalRevenue), 560f, 396f, greenVal)
+        drawMetric("Total Expenses", formatMoney(biz.currency, stmt.totalExpenses), 80f, 496f, redVal)
+        drawMetric("Total Withdrawn", formatMoney(biz.currency, stmt.totalWithdrawn), 560f, 496f)
+        drawMetric(
+            "Net Profit / Loss",
+            formatMoney(biz.currency, stmt.netProfit),
+            80f,
+            596f,
+            if (stmt.netProfit >= 0) greenVal else redVal
+        )
+        drawMetric("Cash Balance", formatMoney(biz.currency, stmt.currentBalance), 560f, 596f, valuePaint)
+
+        // Partner Equity Card
+        val pTop = 706f
+        val pBottom = pTop + 90f + stmt.partnerLines.size * rowHeight
+        c.drawRoundRect(RectF(44f, pTop, width - 44f, pBottom), 28f, 28f, cardPaint)
+        c.drawText("Partner Equity Breakdown", 80f, pTop + 56f, sectionPaint)
+
+        val linePaint = Paint().apply { color = Color.parseColor("#E5E7EB"); strokeWidth = 2f }
+        var y = pTop + 110f
+        stmt.partnerLines.forEachIndexed { idx, p ->
+            if (idx > 0) c.drawLine(80f, y - 34f, width - 80f, y - 34f, linePaint)
+            c.drawText("${p.partnerName}  (Cap %.1f%% | Agreed %.1f%%)".format(Locale.US, p.capitalSharePct, p.agreedOwnershipPct), 80f, y, valuePaint)
+            c.drawText(
+                "Invested: ${formatMoney(biz.currency, p.invested)}   •   Profit: ${formatMoney(biz.currency, p.profitShare)}   •   Net: ${formatMoney(biz.currency, p.netPosition)}",
+                80f,
+                y + 38f,
+                labelPaint
+            )
+            y += rowHeight
+        }
+
+        val footPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#6B7280"); textSize = 24f }
+        c.drawText("Generated offline by PartnerLedger  •  ${stmt.auditSummary}", 56f, height - 48f, footPaint)
+
+        val safe = biz.businessName.replace(Regex("[^A-Za-z0-9]"), "_").ifBlank { "PartnerLedger" }
+        val file = File(context.cacheDir, "${safe}_Statement_${stmt.number}.png")
+        FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.PNG, 95, it) }
+        shareFile(context, file, "image/png", "Share Statement #${stmt.number} Image")
+    }
+
+    fun sharePartnerAsImage(context: Context, biz: BusinessConfig, ps: PartnerSummary) {
+        val width = 1080
+        val height = 980
+        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        c.drawColor(Color.parseColor("#F6F8F7"))
+
+        val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1B4D3E") }
+        c.drawRect(0f, 0f, width.toFloat(), 230f, headerPaint)
+
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; textSize = 50f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val goldPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#F59E0B"); textSize = 30f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#D1FAE5"); textSize = 28f
+        }
+        val today = SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date())
+
+        c.drawText(ps.partner.name, 56f, 94f, titlePaint)
+        c.drawText("PARTNER STATEMENT  •  ${biz.businessName}", 56f, 148f, goldPaint)
+        c.drawText("Date: $today  |  Currency: ${biz.currency}", 56f, 196f, subPaint)
+
+        val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        c.drawRoundRect(RectF(44f, 268f, width - 44f, 880f), 28f, 28f, cardPaint)
+
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#6B7280"); textSize = 30f }
+        val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#111827"); textSize = 38f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val greenVal = Paint(valuePaint).apply { color = Color.parseColor("#15803D") }
+
+        fun row(label: String, value: String, y: Float, p: Paint = valuePaint) {
+            c.drawText(label, 84f, y, labelPaint)
+            c.drawText(value, 84f, y + 48f, p)
+        }
+
+        row("Total Invested", formatMoney(biz.currency, ps.invested), 344f, greenVal)
+        row("Total Withdrawn", formatMoney(biz.currency, ps.withdrawn), 460f)
+        row("Capital Share / Agreed Ownership", "%.1f%%  /  %.1f%%".format(Locale.US, ps.capitalSharePct, ps.partner.agreedOwnershipPct), 576f)
+        row("Profit Share (ROI %.1f%%)".format(Locale.US, ps.roiPct), formatMoney(biz.currency, ps.profitShare), 692f, greenVal)
+        row("Net Position", formatMoney(biz.currency, ps.netPosition), 808f, valuePaint)
+
+        val footPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#6B7280"); textSize = 24f }
+        c.drawText("Generated offline by PartnerLedger", 56f, height - 40f, footPaint)
+
+        val safe = ps.partner.name.replace(Regex("[^A-Za-z0-9]"), "_").ifBlank { "Partner" }
+        val file = File(context.cacheDir, "Partner_${safe}_Card.png")
+        FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.PNG, 95, it) }
+        shareFile(context, file, "image/png", "Share ${ps.partner.name} Image")
+    }
+
+    // ---- PDF Statements ----
     fun shareNumberedStatementPdf(context: Context, biz: BusinessConfig, stmt: StatementSnapshot) {
         val pdf = PdfDocument()
         val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
@@ -35,28 +220,28 @@ object ExportManager {
         val small = Paint().apply { textSize = 9.5f }
 
         var y = 46f
-        c.drawText("${biz.businessName} — Statement #${stmt.number}", 40f, y, title); y += 20f
+        c.drawText("${biz.businessName} - Statement #${stmt.number}", 40f, y, title); y += 20f
         c.drawText("As of ${stmt.asOfDate}  |  Prepared by ${biz.adminName}  |  Currency: ${biz.currency}", 40f, y, small); y += 28f
 
         c.drawText("Business Totals", 40f, y, head); y += 18f
-        c.drawText("Total Capital Invested: ${biz.currency} %,.2f".format(stmt.totalInvested), 50f, y, body); y += 16f
-        c.drawText("Total Revenue: ${biz.currency} %,.2f".format(stmt.totalRevenue), 50f, y, body); y += 16f
-        c.drawText("Total Expenses: ${biz.currency} %,.2f".format(stmt.totalExpenses), 50f, y, body); y += 16f
-        c.drawText("Total Withdrawn: ${biz.currency} %,.2f".format(stmt.totalWithdrawn), 50f, y, body); y += 16f
-        c.drawText("Net Profit / Loss: ${biz.currency} %,.2f".format(stmt.netProfit), 50f, y, body); y += 16f
-        c.drawText("Calculated Balance: ${biz.currency} %,.2f".format(stmt.currentBalance), 50f, y, head); y += 28f
+        c.drawText("Total Capital Invested: ${biz.currency} %,.2f".format(Locale.US, stmt.totalInvested), 50f, y, body); y += 16f
+        c.drawText("Total Revenue: ${biz.currency} %,.2f".format(Locale.US, stmt.totalRevenue), 50f, y, body); y += 16f
+        c.drawText("Total Expenses: ${biz.currency} %,.2f".format(Locale.US, stmt.totalExpenses), 50f, y, body); y += 16f
+        c.drawText("Total Withdrawn: ${biz.currency} %,.2f".format(Locale.US, stmt.totalWithdrawn), 50f, y, body); y += 16f
+        c.drawText("Net Profit / Loss: ${biz.currency} %,.2f".format(Locale.US, stmt.netProfit), 50f, y, body); y += 16f
+        c.drawText("Calculated Balance: ${biz.currency} %,.2f".format(Locale.US, stmt.currentBalance), 50f, y, head); y += 28f
 
         c.drawText("Partner Equity & Net Position", 40f, y, head); y += 18f
         stmt.partnerLines.forEach { p ->
             c.drawText(
                 "${p.partnerName}: Invested %,.2f | Withdrawn %,.2f | Cap %.1f%% | Agreed %.1f%%".format(
-                    p.invested, p.withdrawn, p.capitalSharePct, p.agreedOwnershipPct
+                    Locale.US, p.invested, p.withdrawn, p.capitalSharePct, p.agreedOwnershipPct
                 ),
                 50f, y, body
             ); y += 15f
             c.drawText(
                 "   Profit Share: ${biz.currency} %,.2f  |  Net Position: ${biz.currency} %,.2f".format(
-                    p.profitShare, p.netPosition
+                    Locale.US, p.profitShare, p.netPosition
                 ),
                 50f, y, small
             ); y += 20f
@@ -68,7 +253,7 @@ object ExportManager {
         c.drawText("Immutable offline snapshot generated by PartnerLedger.", 40f, y, small)
 
         pdf.finishPage(page)
-        val safe = biz.businessName.replace(Regex("[^A-Za-z0-9]"), "_")
+        val safe = biz.businessName.replace(Regex("[^A-Za-z0-9]"), "_").ifBlank { "PartnerLedger" }
         val file = File(context.cacheDir, "${safe}_Statement_${stmt.number}.pdf")
         FileOutputStream(file).use { pdf.writeTo(it) }
         pdf.close()
@@ -87,30 +272,32 @@ object ExportManager {
 
         val today = SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date())
         var y = 46f
-        c.drawText("${biz.businessName} — Partner Statement", 40f, y, title); y += 20f
+        c.drawText("${biz.businessName} - Partner Statement", 40f, y, title); y += 20f
         c.drawText("Partner: ${ps.partner.name}  |  Date: $today  |  Currency: ${biz.currency}", 40f, y, small); y += 26f
 
         c.drawText("Summary", 40f, y, head); y += 18f
-        c.drawText("Total Invested: ${biz.currency} %,.2f".format(ps.invested), 50f, y, body); y += 16f
-        c.drawText("Total Withdrawn: ${biz.currency} %,.2f".format(ps.withdrawn), 50f, y, body); y += 16f
-        c.drawText("Capital Share: %.1f%%  |  Agreed Ownership: %.1f%%".format(ps.capitalSharePct, ps.partner.agreedOwnershipPct), 50f, y, body); y += 16f
-        c.drawText("Profit Share: ${biz.currency} %,.2f  |  ROI: %.1f%%".format(ps.profitShare, ps.roiPct), 50f, y, body); y += 16f
-        c.drawText("Net Position: ${biz.currency} %,.2f".format(ps.netPosition), 50f, y, head); y += 16f
+        c.drawText("Total Invested: ${biz.currency} %,.2f".format(Locale.US, ps.invested), 50f, y, body); y += 16f
+        c.drawText("Total Withdrawn: ${biz.currency} %,.2f".format(Locale.US, ps.withdrawn), 50f, y, body); y += 16f
+        c.drawText("Capital Share: %.1f%%  |  Agreed Ownership: %.1f%%".format(Locale.US, ps.capitalSharePct, ps.partner.agreedOwnershipPct), 50f, y, body); y += 16f
+        c.drawText("Profit Share: ${biz.currency} %,.2f  |  ROI: %.1f%%".format(Locale.US, ps.profitShare, ps.roiPct), 50f, y, body); y += 16f
+        c.drawText("Net Position: ${biz.currency} %,.2f".format(Locale.US, ps.netPosition), 50f, y, head); y += 16f
         if (ps.owedByBusiness > 0.0) {
-            c.drawText("Reimbursement Owed (Settle-Up): ${biz.currency} %,.2f".format(ps.owedByBusiness), 50f, y, body); y += 16f
+            c.drawText("Reimbursement Owed (Settle-Up): ${biz.currency} %,.2f".format(Locale.US, ps.owedByBusiness), 50f, y, body); y += 16f
         }
 
         y += 12f
         c.drawText("Recent Activity", 40f, y, head); y += 18f
         entries.take(25).forEach { e ->
             if (y < 790f) {
-                c.drawText("${e.date}  |  ${e.type.label}  |  ${biz.currency} %,.2f  |  ${e.note}".format(e.amount), 50f, y, small)
+                val orig = formatEntryOriginal(e, biz.currency)?.let { " ($it)" } ?: ""
+                val tag = if (e.type == EntryType.EXPENSE && e.paidByPartnerId == ps.partner.id && e.countAsInvestment) " [As Inv]" else ""
+                c.drawText("${e.date} | ${e.type.label}$tag | ${biz.currency} %,.2f$orig | ${e.note}".format(Locale.US, e.amount), 50f, y, small)
                 y += 15f
             }
         }
 
         pdf.finishPage(page)
-        val safe = ps.partner.name.replace(Regex("[^A-Za-z0-9]"), "_")
+        val safe = ps.partner.name.replace(Regex("[^A-Za-z0-9]"), "_").ifBlank { "Partner" }
         val file = File(context.cacheDir, "Partner_${safe}_Statement.pdf")
         FileOutputStream(file).use { pdf.writeTo(it) }
         pdf.close()
@@ -124,7 +311,7 @@ object ExportManager {
         val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
 
         val sb = StringBuilder()
-        sb.appendLine("ID,Status,Type,Date,Partner,Category,Vendor_Source,Amount,Currency,Method,PaidBy,Proof,Note,EnteredAt")
+        sb.appendLine("ID,Status,Type,Date,Partner,Category,Vendor_Source,Amount,Currency,OrigCurrency,OrigAmount,ExchangeRate,Method,PaidBy,CountAsInvestment,HasReceiptPhoto,Note,EnteredAt")
         state.entries.forEach { e ->
             val status = if (e.isDeleted) "DELETED" else "ACTIVE"
             val pName = pMap[e.partnerId]?.name ?: ""
@@ -141,9 +328,13 @@ object ExportManager {
                     csvCell(e.vendorOrSource),
                     e.amount.toString(),
                     biz.currency,
+                    e.originalCurrency.ifBlank { biz.currency },
+                    if (e.originalAmount > 0.0) e.originalAmount.toString() else e.amount.toString(),
+                    e.exchangeRate.toString(),
                     e.paymentMethod,
                     csvCell(paidBy),
-                    e.hasProof.toString(),
+                    e.countAsInvestment.toString(),
+                    e.receiptImageBase64.isNotBlank().toString(),
                     csvCell(e.note),
                     fmt.format(Date(e.createdAt))
                 ).joinToString(",")
@@ -165,7 +356,7 @@ object ExportManager {
             )
         }
 
-        val safe = biz.businessName.replace(Regex("[^A-Za-z0-9]"), "_")
+        val safe = biz.businessName.replace(Regex("[^A-Za-z0-9]"), "_").ifBlank { "PartnerLedger" }
         val tag = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         val file = File(context.cacheDir, "${safe}_Ledger_${tag}.csv")
         file.writeText(sb.toString())
@@ -173,7 +364,7 @@ object ExportManager {
     }
 
     fun exportBackupFile(context: Context, biz: BusinessConfig, jsonContent: String, password: String) {
-        val safe = biz.businessName.replace(Regex("[^A-Za-z0-9]"), "_")
+        val safe = biz.businessName.replace(Regex("[^A-Za-z0-9]"), "_").ifBlank { "PartnerLedger" }
         val tag = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         val file = File(context.cacheDir, "${safe}_backup_${tag}.ptb")
         val payload = if (password.isBlank()) "PLAIN::$jsonContent" else "ENC::" + encrypt(jsonContent, password)

@@ -1,71 +1,133 @@
 package com.mahibafaris.partnerledger.ui.screens
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.mahibafaris.partnerledger.data.LedgerRepository
+import androidx.compose.ui.unit.sp
+import com.mahibafaris.partnerledger.data.LedgerCalculator
 import com.mahibafaris.partnerledger.export.ExportManager
 import com.mahibafaris.partnerledger.model.*
-import com.mahibafaris.partnerledger.ui.theme.AppColors
-import java.text.SimpleDateFormat
-import java.util.*
-import kotlin.math.abs
+import com.mahibafaris.partnerledger.ui.theme.*
+import java.util.Locale
 
 @Composable
-fun PartnersListScreen(
-    biz: BusinessConfig,
-    metrics: DashboardMetrics,
-    onSelectPartner: (String) -> Unit,
-    onAddPartner: (Partner, Double) -> Unit
+fun PartnersScreen(
+    state: AppState,
+    onAddPartner: (Partner) -> Unit
 ) {
+    val biz = state.business ?: return
+    val context = LocalContext.current
+    val totals = remember(state) { LedgerCalculator.compute(state) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 88.dp)
-    ) {
-        item {
-            Button(onClick = { showAddDialog = true }, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Partners", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Button(onClick = { showAddDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Add Partner")
+                Spacer(Modifier.width(4.dp))
+                Text("Add")
             }
         }
-        items(metrics.partnerSummaries) { ps ->
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth().clickable { onSelectPartner(ps.partner.id) }
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(ps.partner.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+
+        Spacer(Modifier.height(12.dp))
+
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(totals.partnerSummaries) { ps ->
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(ps.partner.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            "Net: ${biz.currency} %,.2f".format(ps.netPosition),
-                            fontWeight = FontWeight.Bold,
-                            color = if (ps.netPosition >= 0) AppColors.MoneyIn else AppColors.MoneyOut
+                            "Capital Share: %.1f%% • Agreed: %.1f%%".format(
+                                Locale.US, ps.capitalSharePct, ps.partner.agreedOwnershipPct
+                            ),
+                            fontSize = 12.sp,
+                            color = Color.Gray
                         )
-                    }
-                    Text("Invested: ${biz.currency} %,.2f • Withdrawn: ${biz.currency} %,.2f".format(ps.invested, ps.withdrawn), style = MaterialTheme.typography.bodySmall)
-                    Text("Capital Share: %.1f%% • Agreed: %.1f%% • ROI: %.1f%%".format(ps.capitalSharePct, ps.partner.agreedOwnershipPct, ps.roiPct), style = MaterialTheme.typography.bodySmall)
-                    if (ps.partner.agreedOwnershipPct > 0.0 && abs(ps.ownershipGapPct) >= 1.0) {
-                        Text("Ownership Gap: %+.1f%%".format(ps.ownershipGapPct), color = AppColors.Warning, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+
+                        Spacer(Modifier.height(8.dp))
+                        ThinDivider()
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("Invested", fontSize = 11.sp, color = Color.Gray)
+                                Text(formatMoney(biz.currency, ps.invested), fontWeight = FontWeight.SemiBold)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Withdrawn", fontSize = 11.sp, color = Color.Gray)
+                                Text(formatMoney(biz.currency, ps.withdrawn), fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("Profit Share", fontSize = 11.sp, color = Color.Gray)
+                                Text(
+                                    formatMoney(biz.currency, ps.profitShare),
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = BrandSecondary
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Net Position", fontSize = 11.sp, color = Color.Gray)
+                                Text(formatMoney(biz.currency, ps.netPosition), fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (ps.owedByBusiness > 0.0) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Owed in Settle-Up: ${formatMoney(biz.currency, ps.owedByBusiness)}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = BrandAccent
+                            )
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { ExportManager.sharePartnerAsImage(context, biz, ps) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("WhatsApp Image", fontSize = 12.sp) }
+                            OutlinedButton(
+                                onClick = {
+                                    val partnerEntries = state.entries
+                                        .filter {
+                                            !it.isDeleted && (it.partnerId == ps.partner.id || it.paidByPartnerId == ps.partner.id)
+                                        }
+                                        .sortedByDescending { it.date + it.createdAt }
+                                    ExportManager.sharePartnerStatementPdf(context, biz, ps, partnerEntries)
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Share PDF", fontSize = 12.sp) }
+                        }
                     }
                 }
             }
@@ -74,296 +136,248 @@ fun PartnersListScreen(
 
     if (showAddDialog) {
         var name by remember { mutableStateOf("") }
-        var contact by remember { mutableStateOf("") }
-        var agreed by remember { mutableStateOf("") }
-        var opening by remember { mutableStateOf("") }
+        var pct by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
             title = { Text("Add Partner") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name *") })
-                    OutlinedTextField(value = contact, onValueChange = { contact = it }, label = { Text("Phone / Email") })
-                    OutlinedTextField(value = agreed, onValueChange = { agreed = it }, label = { Text("Agreed Ownership %") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                    OutlinedTextField(value = opening, onValueChange = { opening = it }, label = { Text("Opening Investment (${biz.currency})") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Partner Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = pct,
+                        onValueChange = { pct = it },
+                        label = { Text("Agreed Ownership % (Optional)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
                 Button(onClick = {
                     if (name.isNotBlank()) {
-                        onAddPartner(
-                            Partner(UUID.randomUUID().toString(), name.trim(), contact.trim(), agreed.toDoubleOrNull() ?: 0.0),
-                            opening.toDoubleOrNull() ?: 0.0
-                        )
+                        onAddPartner(Partner(name = name.trim(), agreedOwnershipPct = pct.toDoubleOrNull() ?: 0.0))
                         showAddDialog = false
                     }
-                }) { Text("Save") }
+                }) { Text("Add") }
             },
-            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("Cancel") } }
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false }) { Text("Cancel") }
+            }
         )
     }
 }
 
 @Composable
-fun PartnerDetailScreen(
-    biz: BusinessConfig,
+fun ReportsScreen(
     state: AppState,
-    ps: PartnerSummary,
-    onBack: () -> Unit
+    onCreateStatement: (String) -> Unit
 ) {
+    val biz = state.business ?: return
     val context = LocalContext.current
-    val partnerEntries = state.entries.filter { !it.isDeleted && it.partnerId == ps.partner.id }
-    val partnerCommitments = state.commitments.filter { it.partnerId == ps.partner.id }
+    var asOfDate by remember { mutableStateOf(todayDateString()) }
 
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-            Text(ps.partner.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        }
+    val cMap = remember(state.categories) { state.categories.associateBy { it.id } }
 
-        Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Invested: ${biz.currency} %,.2f".format(ps.invested), fontWeight = FontWeight.SemiBold)
-                Text("Withdrawn: ${biz.currency} %,.2f".format(ps.withdrawn))
-                Text("Capital Share: %.1f%%  |  Agreed Ownership: %.1f%%".format(ps.capitalSharePct, ps.partner.agreedOwnershipPct))
-                Text("Profit Share: ${biz.currency} %,.2f  |  ROI: %.1f%%".format(ps.profitShare, ps.roiPct))
-                if (state.settings.interestOnCapitalEnabled) {
-                    Text("Interest on Capital (${state.settings.interestRatePct}%): ${biz.currency} %,.2f".format(ps.interestCredit))
-                }
-                if (state.settings.salaryCreditEnabled) {
-                    Text("Salary / Effort Credit: ${biz.currency} %,.2f".format(ps.salaryCredit))
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                Text("Net Position: ${biz.currency} %,.2f".format(ps.netPosition), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                if (ps.owedByBusiness > 0.0) {
-                    Text("Settle-Up Balance: Business owes ${biz.currency} %,.2f".format(ps.owedByBusiness), color = AppColors.Warning, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
+    val expenseByCat = remember(state) {
+        state.entries
+            .filter { !it.isDeleted && it.type == EntryType.EXPENSE }
+            .groupBy { cMap[it.categoryId]?.name ?: "Uncategorized" }
+            .mapValues { it.value.sumOf { e -> e.amount } }
+            .entries.sortedByDescending { it.value }
+    }
 
-        Button(
-            onClick = { ExportManager.sharePartnerStatementPdf(context, biz, ps, partnerEntries) },
-            modifier = Modifier.fillMaxWidth().height(48.dp)
-        ) {
-            Icon(Icons.Default.PictureAsPdf, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Export Partner Statement (PDF)")
-        }
+    val revenueBySource = remember(state) {
+        state.entries
+            .filter { !it.isDeleted && it.type == EntryType.REVENUE }
+            .groupBy { it.vendorOrSource.ifBlank { cMap[it.categoryId]?.name ?: "Other Revenue" } }
+            .mapValues { it.value.sumOf { e -> e.amount } }
+            .entries.sortedByDescending { it.value }
+    }
 
-        if (partnerCommitments.isNotEmpty()) {
-            Text("Pending Commitments", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            partnerCommitments.forEach { c ->
-                Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Promised: ${biz.currency} %,.2f • Paid: ${biz.currency} %,.2f".format(c.promisedAmount, c.paidAmount), fontWeight = FontWeight.SemiBold)
-                        Text("Due: ${c.dueDate}", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        }
-
-        Text("Contribution & Withdrawal Timeline (${partnerEntries.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        if (partnerEntries.isEmpty()) {
-            Text("No activity recorded for this partner yet.", style = MaterialTheme.typography.bodySmall)
-        } else {
-            partnerEntries.forEach { e ->
-                Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Row(modifier = Modifier.padding(12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column {
-                            Text("${e.type.label} • ${e.date}", fontWeight = FontWeight.SemiBold)
-                            if (e.note.isNotBlank()) Text(e.note, style = MaterialTheme.typography.bodySmall)
-                        }
-                        Text(
-                            "${if (e.type == EntryType.INVESTMENT) "+" else "-"}${biz.currency} %,.2f".format(e.amount),
-                            fontWeight = FontWeight.Bold,
-                            color = if (e.type == EntryType.INVESTMENT) AppColors.MoneyIn else AppColors.MoneyOut
-                        )
-                    }
-                }
-            }
+    // Monthly Trend Data (last 6 months with activity)
+    val monthlyTrend = remember(state) {
+        val active = state.entries.filter { !it.isDeleted && it.date.length >= 7 }
+        val months = active.map { it.date.substring(0, 7) }.distinct().sorted().takeLast(6)
+        months.map { ym ->
+            val rev = active.filter { it.type == EntryType.REVENUE && it.date.startsWith(ym) }.sumOf { it.amount }
+            val exp = active.filter { it.type == EntryType.EXPENSE && it.date.startsWith(ym) }.sumOf { it.amount }
+            Triple(ym.substring(5), rev, exp) // Month label e.g. "11"
         }
     }
-}
-
-@Composable
-fun ReportsHubScreen(
-    biz: BusinessConfig,
-    state: AppState,
-    metrics: DashboardMetrics,
-    repo: LedgerRepository,
-    onStateUpdated: (AppState) -> Unit
-) {
-    val context = LocalContext.current
-    var subView by remember { mutableStateOf("HUB") } // HUB, STATEMENTS, CATEGORIES, TRENDS
-
-    when (subView) {
-        "STATEMENTS" -> NumberedStatementsScreen(biz, state, repo, onStateUpdated) { subView = "HUB" }
-        "CATEGORIES" -> CategoryBreakdownScreen(biz, state, metrics) { subView = "HUB" }
-        "TRENDS" -> TrendsComparisonScreen(biz, metrics) { subView = "HUB" }
-        else -> {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
-            ) {
-                item { Text("Reports & Exports", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-                item {
-                    ReportHubCard("Numbered PDF Statements", "Generate Statement #${biz.nextStatementNumber} with immutable snapshot & audit summary", Icons.Default.PictureAsPdf) {
-                        subView = "STATEMENTS"
-                    }
-                }
-                item {
-                    ReportHubCard("Expenses by Category", "Ranked category breakdown & percentages", Icons.Default.PieChart) {
-                        subView = "CATEGORIES"
-                    }
-                }
-                item {
-                    ReportHubCard("Trends & Forecast", "Month-by-month totals, period comparison, and next-month estimate", Icons.Default.TrendingUp) {
-                        subView = "TRENDS"
-                    }
-                }
-                item {
-                    ReportHubCard("Full Ledger + Audit Export (CSV / Excel)", "Share complete accountant-ready spreadsheet", Icons.Default.TableChart) {
-                        ExportManager.exportLedgerCsv(context, state)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReportHubCard(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(14.dp))
-            Column {
-                Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-}
-
-@Composable
-private fun NumberedStatementsScreen(
-    biz: BusinessConfig,
-    state: AppState,
-    repo: LedgerRepository,
-    onStateUpdated: (AppState) -> Unit,
-    onBack: () -> Unit
-) {
-    val context = LocalContext.current
-    var asOfDate by remember { mutableStateOf(SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date())) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 80.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        item { Text("Reports & Charts", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+
+        // 1. Category Donut Chart
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                Text("Numbered Statements", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            }
-        }
-        item {
-            Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Next Number: Statement #${biz.nextStatementNumber}", fontWeight = FontWeight.Bold)
-                    OutlinedTextField(value = asOfDate, onValueChange = { asOfDate = it }, label = { Text("As of Date") }, modifier = Modifier.fillMaxWidth())
-                    Button(
-                        onClick = {
-                            val (updated, snap) = repo.generateNextStatement(state, asOfDate.trim())
-                            onStateUpdated(updated)
-                            ExportManager.shareNumberedStatementPdf(context, updated.business!!, snap)
-                        },
-                        modifier = Modifier.fillMaxWidth().height(48.dp)
-                    ) {
-                        Text("Generate & Share Statement #${biz.nextStatementNumber}")
-                    }
-                }
-            }
-        }
-        item { Text("Statement History (Locked Snapshots)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-        items(state.statements) { s ->
-            Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.padding(14.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Statement #${s.number} • ${s.asOfDate}", fontWeight = FontWeight.Bold)
-                        Text("Balance: ${biz.currency} %,.2f".format(s.currentBalance), style = MaterialTheme.typography.bodySmall)
-                        Text(s.auditSummary, style = MaterialTheme.typography.labelSmall)
-                    }
-                    IconButton(onClick = { ExportManager.shareNumberedStatementPdf(context, biz, s) }) {
-                        Icon(Icons.Default.Share, contentDescription = "Share")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CategoryBreakdownScreen(biz: BusinessConfig, state: AppState, metrics: DashboardMetrics, onBack: () -> Unit) {
-    val activeExp = state.entries.filter { !it.isDeleted && it.type == EntryType.EXPENSE }
-    val catMap = state.categories.associateBy { it.id }
-    val ranked = activeExp.groupBy { it.categoryId }
-        .map { (id, list) -> (catMap[id]?.name ?: "Uncategorized") to list.sumOf { it.amount } }
-        .sortedByDescending { it.second }
-
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                Text("Expenses by Category", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            }
-        }
-        if (ranked.isEmpty()) {
-            item { Text("No expenses recorded yet.") }
-        } else {
-            items(ranked) { (name, sum) ->
-                val pct = if (metrics.totalExpenses > 0.0) (sum / metrics.totalExpenses).toFloat() else 0f
-                Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(name, fontWeight = FontWeight.Bold)
-                            Text("${biz.currency} %,.2f (%.1f%%)".format(sum, pct * 100f), fontWeight = FontWeight.SemiBold)
+                    Text("Expenses by Category", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    if (expenseByCat.isEmpty()) {
+                        Text("Add some expenses to see the category donut chart.", color = Color.Gray, fontSize = 13.sp)
+                    } else {
+                        val totalExp = expenseByCat.sumOf { it.value }.coerceAtLeast(0.01)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Canvas(modifier = Modifier.size(130.dp).padding(8.dp)) {
+                                var startAngle = -90f
+                                expenseByCat.forEachIndexed { idx, entry ->
+                                    val sweep = ((entry.value / totalExp) * 360.0).toFloat()
+                                    drawArc(
+                                        color = ChartPalette[idx % ChartPalette.size],
+                                        startAngle = startAngle,
+                                        sweepAngle = sweep,
+                                        useCenter = false,
+                                        style = Stroke(width = 28f)
+                                    )
+                                    startAngle += sweep
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                expenseByCat.take(6).forEachIndexed { idx, (cat, amt) ->
+                                    val pct = (amt / totalExp) * 100.0
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .background(ChartPalette[idx % ChartPalette.size], CircleShape)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Column {
+                                            Text("$cat (%.0f%%)".format(Locale.US, pct), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            Text(formatMoney(biz.currency, amt), fontSize = 11.sp, color = Color.Gray)
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        LinearProgressIndicator(progress = { pct }, modifier = Modifier.fillMaxWidth())
                     }
                 }
             }
         }
-    }
-}
 
-@Composable
-private fun TrendsComparisonScreen(biz: BusinessConfig, metrics: DashboardMetrics, onBack: () -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 2. Monthly Revenue vs Expense Bar Chart
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                Text("Trends & Forecast", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            }
-        }
-        item {
-            Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Next-Month Spending Forecast (Estimate)", fontWeight = FontWeight.Bold)
-                    Text("${biz.currency} %,.2f".format(metrics.cashHealth.avgMonthlyExpense), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("Plain average of ${metrics.cashHealth.monthsOfData} recorded month(s).", style = MaterialTheme.typography.labelSmall)
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Monthly Revenue vs Expenses", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(10.dp).background(BrandSecondary, CircleShape))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Revenue", fontSize = 12.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(10.dp).background(BrandDanger, CircleShape))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Expenses", fontSize = 12.sp)
+                        }
+                    }
+
+                    if (monthlyTrend.isEmpty()) {
+                        Text("Log revenue or expenses to see monthly bars.", color = Color.Gray, fontSize = 13.sp)
+                    } else {
+                        val maxVal = monthlyTrend.maxOf { maxOf(it.second, it.third) }.coerceAtLeast(1.0)
+                        Canvas(modifier = Modifier.fillMaxWidth().height(150.dp)) {
+                            val groupWidth = size.width / monthlyTrend.size
+                            val barW = (groupWidth * 0.28f).coerceAtMost(36f)
+                            monthlyTrend.forEachIndexed { idx, (_, rev, exp) ->
+                                val centerX = groupWidth * idx + groupWidth / 2f
+                                val revH = ((rev / maxVal) * (size.height - 16f)).toFloat()
+                                val expH = ((exp / maxVal) * (size.height - 16f)).toFloat()
+                                drawRect(
+                                    color = BrandSecondary,
+                                    topLeft = Offset(centerX - barW - 3f, size.height - revH),
+                                    size = Size(barW, revH)
+                                )
+                                drawRect(
+                                    color = BrandDanger,
+                                    topLeft = Offset(centerX + 3f, size.height - expH),
+                                    size = Size(barW, expH)
+                                )
+                            }
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                            monthlyTrend.forEach { (monthLabel, _, _) ->
+                                Text("M$monthLabel", fontSize = 11.sp, color = Color.Gray)
+                            }
+                        }
+                    }
                 }
             }
         }
-        items(metrics.monthlyBuckets.reversed()) { b ->
-            Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(b.monthKey, fontWeight = FontWeight.Bold)
-                    Text("Invested: ${biz.currency} %,.0f  •  Revenue: ${biz.currency} %,.0f  •  Expenses: ${biz.currency} %,.0f".format(b.invested, b.revenue, b.expenses), style = MaterialTheme.typography.bodySmall)
+
+        // 3. Revenue by Network / Source
+        item {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Revenue by Network / Source", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    if (revenueBySource.isEmpty()) {
+                        Text("No revenue logged yet.", color = Color.Gray, fontSize = 13.sp)
+                    } else {
+                        revenueBySource.forEach { (src, amt) ->
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(src, fontSize = 14.sp)
+                                Text(formatMoney(biz.currency, amt), fontWeight = FontWeight.SemiBold, color = BrandSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Generate Numbered Statement
+        item {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Generate Numbered Statement", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    DatePickerField(label = "As of Date", value = asOfDate, onValueChange = { asOfDate = it })
+                    Button(
+                        onClick = { onCreateStatement(asOfDate.ifBlank { todayDateString() }) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Create Statement #${state.statements.size + 1}") }
+                }
+            }
+        }
+
+        // 5. Saved Statements with WhatsApp Image + PDF Share
+        if (state.statements.isNotEmpty()) {
+            item { Text("Saved Statements", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+            items(state.statements.sortedByDescending { it.number }) { stmt ->
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text("Statement #${stmt.number}  •  As of ${stmt.asOfDate}", fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Profit: ${formatMoney(biz.currency, stmt.netProfit)} • Cash: ${formatMoney(biz.currency, stmt.currentBalance)}",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = { ExportManager.shareStatementAsImage(context, biz, stmt) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("WhatsApp Image", fontSize = 12.sp) }
+                            OutlinedButton(
+                                onClick = { ExportManager.shareNumberedStatementPdf(context, biz, stmt) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Share PDF", fontSize = 12.sp) }
+                        }
+                    }
                 }
             }
         }
