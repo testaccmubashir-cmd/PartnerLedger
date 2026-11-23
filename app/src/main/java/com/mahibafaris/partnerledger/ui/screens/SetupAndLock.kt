@@ -561,9 +561,7 @@ fun PinLockScreen(
                         onUnlocked()
                     }
                     override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
-                        if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED &&
-                            errorCode != BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON
-                        ) {
+if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED) {
                             bioStatus = errString?.toString()
                         }
                     }
