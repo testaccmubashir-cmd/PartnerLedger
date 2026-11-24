@@ -36,6 +36,7 @@ class LedgerRepository(private val context: Context) {
                 put("startDate", b.startDate)
                 put("pin", b.pin)
                 put("biometricEnabled", b.biometricEnabled)
+                put("logoBase64", b.logoBase64)
             })
         }
 
@@ -59,6 +60,10 @@ class LedgerRepository(private val context: Context) {
                     put("forType", c.forType.name)
                 })
             }
+        })
+
+        root.put("currencies", JSONArray().apply {
+            state.currencies.forEach { put(it) }
         })
 
         root.put("entries", JSONArray().apply {
@@ -159,7 +164,8 @@ class LedgerRepository(private val context: Context) {
                 currency = b.optString("currency", "PKR"),
                 startDate = b.optString("startDate", todayDateString()),
                 pin = b.optString("pin", ""),
-                biometricEnabled = b.optBoolean("biometricEnabled", true)
+                biometricEnabled = b.optBoolean("biometricEnabled", true),
+                logoBase64 = b.optString("logoBase64", "")
             )
         } else null
 
@@ -195,6 +201,17 @@ class LedgerRepository(private val context: Context) {
             }
         } else {
             categories.addAll(defaultCategories())
+        }
+
+        val currencies = mutableListOf<String>()
+        val curArr = root.optJSONArray("currencies")
+        if (curArr != null && curArr.length() > 0) {
+            for (i in 0 until curArr.length()) {
+                val code = curArr.optString(i, "").trim().uppercase(Locale.US)
+                if (code.isNotBlank() && !currencies.contains(code)) currencies.add(code)
+            }
+        } else {
+            currencies.addAll(SUPPORTED_CURRENCIES)
         }
 
         val entries = mutableListOf<LedgerEntry>()
@@ -304,6 +321,7 @@ class LedgerRepository(private val context: Context) {
             business = business,
             partners = partners,
             categories = categories,
+            currencies = currencies,
             entries = entries,
             pendingContributions = pending,
             statements = statements,

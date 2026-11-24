@@ -25,7 +25,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -52,7 +54,8 @@ fun HomeDashboardScreen(
     state: AppState,
     onAddClick: (EntryType) -> Unit,
     onEntryClick: (LedgerEntry) -> Unit,
-    onViewAllLedger: () -> Unit
+    onViewAllLedger: () -> Unit,
+    onOpenProfile: () -> Unit
 ) {
     val biz = state.business ?: return
     val totals = remember(state) { LedgerCalculator.compute(state) }
@@ -61,8 +64,14 @@ fun HomeDashboardScreen(
     }
     val pMap = remember(state.partners) { state.partners.associateBy { it.id } }
     val cMap = remember(state.categories) { state.categories.associateBy { it.id } }
+    val logoBitmap = remember(biz.logoBase64) {
+        if (biz.logoBase64.isNotBlank()) ExportManager.decodeBase64ToBitmap(biz.logoBase64) else null
+    }
+    val bizInitials = remember(biz.businessName) {
+        biz.businessName.trim().split(" ").filter { it.isNotBlank() }.take(2)
+            .joinToString("") { it.take(1).uppercase(Locale.US) }.ifBlank { "PL" }
+    }
 
-    // Smooth animated numbers
     val animBalance by animateFloatAsState(
         targetValue = totals.currentBalance.toFloat(),
         animationSpec = tween(650, easing = FastOutSlowInEasing),
@@ -81,16 +90,41 @@ fun HomeDashboardScreen(
         contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Header Row with Base Currency Pill
+        // Header Row with Tappable Business Logo Avatar -> Profile
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(biz.businessName, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-                    Text("Partner Finance Ledger", fontSize = 12.sp, color = LavenderMuted)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f).clickable { onOpenProfile() }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(HeroGradientBrush)
+                            .border(1.5.dp, CyanElectric.copy(alpha = 0.55f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (logoBitmap != null) {
+                            Image(
+                                bitmap = logoBitmap.asImageBitmap(),
+                                contentDescription = "Business Profile",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Text(bizInitials, color = CyanElectric, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                        }
+                    }
+                    Column {
+                        Text(biz.businessName, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 1)
+                        Text("Tap to edit profile", fontSize = 11.sp, color = LavenderMuted)
+                    }
                 }
                 Row(
                     modifier = Modifier
@@ -208,7 +242,7 @@ fun HomeDashboardScreen(
             }
         }
 
-        // Recent Activity Header
+        // Recent Activity
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -494,9 +528,210 @@ fun EntryRowCard(
 }
 
 /**
- * Custom full-width, keyboard-aware dark modal dialog.
- * Fixes the Android keypad overlap bug by using imePadding() + verticalScroll inside a resizable Dialog.
+ * Receipt View Dialog shown when tapping any entry on Ledger or Home.
+ * Displays full breakdown + attached proof image + Share (WhatsApp PNG) + Edit buttons.
  */
+@Composable
+fun EntryReceiptDialog(
+    state: AppState,
+    entry: LedgerEntry,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val biz = state.business ?: return
+    val context = LocalContext.current
+    val partnerName = state.partners.find { it.id == entry.partnerId }?.name
+    val paidByName = state.partners.find { it.id == entry.paidByPartnerId }?.name
+    val categoryName = state.categories.find { it.id == entry.categoryId }?.name
+    val proofBitmap = remember(entry.receiptImageBase64) {
+        if (entry.receiptImageBase64.isNotBlank()) ExportManager.decodeBase64ToBitmap(entry.receiptImageBase64) else null
+    }
+    var showFullPhoto by remember { mutableStateOf(false) }
+
+    val isPositive = entry.type == EntryType.INVESTMENT || entry.type == EntryType.REVENUE
+    val amtColor = when (entry.type) {
+        EntryType.INVESTMENT, EntryType.REVENUE -> EmeraldSoft
+        EntryType.EXPENSE -> CoralSoft
+        EntryType.WITHDRAWAL -> AmberSoft
+    }
+    val sign = if (isPositive) "+" else "-"
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.76f))
+                .padding(horizontal = 16.dp, vertical = 24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 680.dp),
+                shape = RoundedCornerShape(26.dp),
+                color = AmethystDeep,
+                border = BorderStroke(1.dp, CyanElectric.copy(alpha = 0.35f))
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Top Receipt Banner
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(HeroGradientBrush)
+                            .padding(horizontal = 18.dp, vertical = 16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column {
+                                Text("TRANSACTION RECEIPT", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CyanElectric)
+                                Spacer(Modifier.height(4.dp))
+                                Text(biz.businessName, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                                Text("Ref #${entry.id.take(8).uppercase(Locale.US)}", fontSize = 11.sp, color = LavenderMuted)
+                            }
+                            IconButton(onClick = onDismiss) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = LavenderMuted)
+                            }
+                        }
+                    }
+
+                    // Scrollable Receipt Body
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "$sign${formatMoney(biz.currency, entry.amount)}",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = amtColor
+                        )
+                        formatEntryOriginal(entry, biz.currency)?.let { orig ->
+                            val rateClean = "%.4f".format(Locale.US, entry.exchangeRate).trimEnd('0').trimEnd('.')
+                            Text("Original: $orig (Rate: $rateClean)", fontSize = 12.sp, color = LavenderMuted)
+                        }
+
+                        ThinDivider()
+
+                        ReceiptDetailRow("Date", entry.date)
+                        ReceiptDetailRow("Type", entry.type.label)
+                        if (!categoryName.isNullOrBlank()) ReceiptDetailRow("Category", categoryName)
+                        if (!partnerName.isNullOrBlank()) ReceiptDetailRow("Partner", partnerName)
+                        if (entry.vendorOrSource.isNotBlank()) {
+                            ReceiptDetailRow(
+                                if (entry.type == EntryType.EXPENSE) "Vendor / Paid To" else "Source / Client",
+                                entry.vendorOrSource
+                            )
+                        }
+                        if (entry.type == EntryType.EXPENSE) {
+                            val paidTxt = if (paidByName == null) "Business Cash"
+                            else "$paidByName (${if (entry.countAsInvestment) "As Investment" else "Reimburse Later"})"
+                            ReceiptDetailRow("Paid By", paidTxt)
+                        }
+                        ReceiptDetailRow("Payment Method", entry.paymentMethod)
+                        if (entry.note.isNotBlank()) ReceiptDetailRow("Note", entry.note)
+
+                        if (proofBitmap != null) {
+                            ThinDivider()
+                            Text("Attached Proof Photo", fontSize = 12.sp, color = LavenderMuted)
+                            Image(
+                                bitmap = proofBitmap.asImageBitmap(),
+                                contentDescription = "Attached receipt photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(170.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable { showFullPhoto = true }
+                            )
+                        }
+                    }
+
+                    ThinDivider()
+
+                    // Bottom Action Bar: Share WhatsApp Image + Edit
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(AmethystElevated)
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                ExportManager.shareEntryReceiptImage(
+                                    context = context,
+                                    biz = biz,
+                                    entry = entry,
+                                    partnerName = partnerName,
+                                    paidByName = paidByName,
+                                    categoryName = categoryName
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Share Image", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        OutlinedButton(
+                            onClick = onEdit,
+                            border = BorderStroke(1.dp, CyanElectric.copy(alpha = 0.6f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanElectric),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Edit", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showFullPhoto && proofBitmap != null) {
+        AlertDialog(
+            onDismissRequest = { showFullPhoto = false },
+            containerColor = AmethystElevated,
+            title = { Text("Receipt Photo", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Image(
+                    bitmap = proofBitmap.asImageBitmap(),
+                    contentDescription = "Full receipt",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showFullPhoto = false }) { Text("Close", color = CyanElectric) }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ReceiptDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(label, fontSize = 12.sp, color = LavenderMuted)
+        Spacer(Modifier.width(12.dp))
+        Text(value, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+    }
+}
+
 @Composable
 fun AddEditEntryDialog(
     state: AppState,
@@ -513,8 +748,10 @@ fun AddEditEntryDialog(
     var type by remember { mutableStateOf(existing?.type ?: initialType) }
     var date by remember { mutableStateOf(existing?.date ?: todayDateString()) }
 
-    val currencyOptions = remember(baseCurrency) {
-        (listOf(baseCurrency) + SUPPORTED_CURRENCIES).distinct()
+    // Uses user's prioritized currency list!
+    val currencyOptions = remember(state.currencies, baseCurrency) {
+        val list = if (state.currencies.isNotEmpty()) state.currencies else SUPPORTED_CURRENCIES
+        if (list.contains(baseCurrency)) list else listOf(baseCurrency) + list
     }
     var selectedCurrency by remember {
         mutableStateOf(
@@ -597,7 +834,6 @@ fun AddEditEntryDialog(
                 border = BorderStroke(1.dp, ElevatedBorderColor)
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Header + Type Selector
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -644,7 +880,6 @@ fun AddEditEntryDialog(
 
                     ThinDivider()
 
-                    // Scrollable Form Body (stays scrollable even when keypad is up!)
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -859,7 +1094,6 @@ fun AddEditEntryDialog(
                             }
                         }
 
-                        // Receipt Photo
                         Column {
                             Text("Receipt / Proof Photo (Optional)", fontSize = 12.sp, color = LavenderMuted)
                             Spacer(Modifier.height(6.dp))
@@ -921,7 +1155,6 @@ fun AddEditEntryDialog(
 
                     ThinDivider()
 
-                    // Footer Buttons
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

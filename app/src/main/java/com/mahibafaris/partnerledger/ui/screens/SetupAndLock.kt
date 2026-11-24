@@ -9,13 +9,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -30,6 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -153,7 +158,6 @@ fun WelcomeScreen(
 
             Spacer(Modifier.height(34.dp))
 
-            // Option 1: New User (Hero Gradient Card)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -186,7 +190,6 @@ fun WelcomeScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // Option 2: Returning User
             FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 24.dp) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text("Returning User", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -301,12 +304,24 @@ fun BusinessSetupWizard(
     onBackToWelcome: () -> Unit,
     onComplete: (AppState) -> Unit
 ) {
+    val context = LocalContext.current
     var step by remember { mutableStateOf(1) }
 
     var businessName by remember { mutableStateOf("") }
     var adminName by remember { mutableStateOf("") }
     var currency by remember { mutableStateOf("PKR") }
     var startDate by remember { mutableStateOf(todayDateString()) }
+    var logoBase64 by remember { mutableStateOf("") }
+
+    val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            val encoded = ExportManager.compressUriToBase64(context, uri, maxDim = 400, quality = 80)
+            if (encoded != null) logoBase64 = encoded
+        }
+    }
+    val logoBitmap = remember(logoBase64) {
+        if (logoBase64.isNotBlank()) ExportManager.decodeBase64ToBitmap(logoBase64) else null
+    }
 
     val partners = remember { mutableStateListOf<Partner>() }
     var newPartnerName by remember { mutableStateOf("") }
@@ -343,6 +358,51 @@ fun BusinessSetupWizard(
             when (step) {
                 1 -> {
                     item { Text("Business Details", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White) }
+                    item {
+                        // Optional Business Logo Picker
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(70.dp)
+                                    .clip(CircleShape)
+                                    .background(AmethystElevated)
+                                    .border(1.5.dp, CyanElectric.copy(alpha = 0.55f), CircleShape)
+                                    .clickable { logoPicker.launch("image/*") },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (logoBitmap != null) {
+                                    Image(
+                                        bitmap = logoBitmap.asImageBitmap(),
+                                        contentDescription = "Business Logo",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(Icons.Default.Add, contentDescription = "Add Logo", tint = CyanElectric)
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Business Logo (Optional)", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                Text(
+                                    "Tap the circle to pick a logo, or skip and add it anytime from your Profile.",
+                                    fontSize = 11.sp,
+                                    color = LavenderMuted
+                                )
+                                if (logoBase64.isNotBlank()) {
+                                    Text(
+                                        "Remove logo",
+                                        fontSize = 11.sp,
+                                        color = CoralSoft,
+                                        modifier = Modifier.padding(top = 4.dp).clickable { logoBase64 = "" }
+                                    )
+                                }
+                            }
+                        }
+                    }
                     item {
                         OutlinedTextField(
                             value = businessName,
@@ -538,8 +598,10 @@ fun BusinessSetupWizard(
                                         currency = currency,
                                         startDate = startDate.ifBlank { todayDateString() },
                                         pin = pin,
-                                        biometricEnabled = biometricEnabled
+                                        biometricEnabled = biometricEnabled,
+                                        logoBase64 = logoBase64
                                     )
+                                    val orderedCurrencies = (listOf(currency) + SUPPORTED_CURRENCIES).distinct()
                                     val initialEntries = mutableListOf<LedgerEntry>()
                                     val initialLogs = mutableListOf<AuditLog>()
                                     partners.forEach { p ->
@@ -568,6 +630,7 @@ fun BusinessSetupWizard(
                                             business = biz,
                                             partners = partners.toList(),
                                             categories = defaultCategories(),
+                                            currencies = orderedCurrencies,
                                             entries = initialEntries,
                                             auditLogs = initialLogs
                                         )

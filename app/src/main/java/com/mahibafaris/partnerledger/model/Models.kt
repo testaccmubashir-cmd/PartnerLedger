@@ -18,7 +18,8 @@ data class BusinessConfig(
     val currency: String = "PKR",
     val startDate: String = todayDateString(),
     val pin: String = "",
-    val biometricEnabled: Boolean = true
+    val biometricEnabled: Boolean = true,
+    val logoBase64: String = ""
 )
 
 data class Partner(
@@ -39,7 +40,7 @@ data class LedgerEntry(
     val id: String = UUID.randomUUID().toString(),
     val type: EntryType,
     val date: String = todayDateString(),
-    val amount: Double, // Always stored in base business currency
+    val amount: Double,
     val partnerId: String? = null,
     val categoryId: String? = null,
     val vendorOrSource: String = "",
@@ -50,7 +51,7 @@ data class LedgerEntry(
     val originalAmount: Double = 0.0,
     val exchangeRate: Double = 1.0,
     val hasProof: Boolean = false,
-    val receiptImageBase64: String = "", // Compressed JPEG stored inside ledger & .ptb backups
+    val receiptImageBase64: String = "",
     val note: String = "",
     val isDeleted: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
@@ -116,6 +117,7 @@ data class AppState(
     val business: BusinessConfig? = null,
     val partners: List<Partner> = emptyList(),
     val categories: List<Category> = defaultCategories(),
+    val currencies: List<String> = SUPPORTED_CURRENCIES,
     val entries: List<LedgerEntry> = emptyList(),
     val pendingContributions: List<PendingContribution> = emptyList(),
     val statements: List<StatementSnapshot> = emptyList(),

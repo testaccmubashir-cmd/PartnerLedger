@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.mahibafaris.partnerledger.data.LedgerCalculator
 import com.mahibafaris.partnerledger.data.LedgerRepository
@@ -46,7 +45,10 @@ fun PartnerLedgerApp(repo: LedgerRepository) {
     var state by remember { mutableStateOf(repo.load()) }
     var unlocked by remember { mutableStateOf(state.business?.pin.isNullOrBlank()) }
     var selectedTab by remember { mutableStateOf(0) }
+    var pendingMoreSubScreen by remember { mutableStateOf("MENU") }
 
+    // Receipt viewer vs Edit dialog states
+    var viewingReceiptEntry by remember { mutableStateOf<LedgerEntry?>(null) }
     var showEntryDialog by remember { mutableStateOf(false) }
     var dialogInitialType by remember { mutableStateOf(EntryType.EXPENSE) }
     var editingEntry by remember { mutableStateOf<LedgerEntry?>(null) }
@@ -159,12 +161,12 @@ fun PartnerLedgerApp(repo: LedgerRepository) {
                             editingEntry = null
                             showEntryDialog = true
                         },
-                        onEntryClick = { e ->
-                            editingEntry = e
-                            dialogInitialType = e.type
-                            showEntryDialog = true
-                        },
-                        onViewAllLedger = { selectedTab = 1 }
+                        onEntryClick = { e -> viewingReceiptEntry = e },
+                        onViewAllLedger = { selectedTab = 1 },
+                        onOpenProfile = {
+                            pendingMoreSubScreen = "PROFILE"
+                            selectedTab = 4
+                        }
                     )
                     1 -> TransactionsListScreen(
                         state = state,
@@ -173,11 +175,7 @@ fun PartnerLedgerApp(repo: LedgerRepository) {
                             editingEntry = null
                             showEntryDialog = true
                         },
-                        onEntryClick = { e ->
-                            editingEntry = e
-                            dialogInitialType = e.type
-                            showEntryDialog = true
-                        }
+                        onEntryClick = { e -> viewingReceiptEntry = e }
                     )
                     2 -> PartnersScreen(
                         state = state,
@@ -221,6 +219,8 @@ fun PartnerLedgerApp(repo: LedgerRepository) {
                     4 -> MoreHubScreen(
                         state = state,
                         repo = repo,
+                        initialSubScreen = pendingMoreSubScreen,
+                        onConsumeInitialSubScreen = { pendingMoreSubScreen = "MENU" },
                         onSettlePartner = { ps ->
                             val updatedEntries = state.entries.map { e ->
                                 if (!e.isDeleted && e.type == EntryType.EXPENSE && e.paidByPartnerId == ps.partner.id && !e.countAsInvestment) {
@@ -263,6 +263,15 @@ fun PartnerLedgerApp(repo: LedgerRepository) {
                                 )
                             )
                         },
+                        onUpdateCategories = { updatedCats ->
+                            updateState(state.copy(categories = updatedCats))
+                        },
+                        onUpdateCurrencies = { updatedCurs ->
+                            updateState(state.copy(currencies = updatedCurs))
+                        },
+                        onUpdateProfile = { updatedBiz ->
+                            updateState(state.copy(business = updatedBiz))
+                        },
                         onRestoreState = { restored -> updateState(restored) },
                         onUpdateSecurity = { newPin, bio ->
                             updateState(state.copy(business = biz.copy(pin = newPin, biometricEnabled = bio)))
@@ -273,6 +282,22 @@ fun PartnerLedgerApp(repo: LedgerRepository) {
         }
     }
 
+    // 1. Receipt Viewer Dialog (when tapping an entry on Ledger or Home)
+    viewingReceiptEntry?.let { entry ->
+        EntryReceiptDialog(
+            state = state,
+            entry = entry,
+            onDismiss = { viewingReceiptEntry = null },
+            onEdit = {
+                viewingReceiptEntry = null
+                editingEntry = entry
+                dialogInitialType = entry.type
+                showEntryDialog = true
+            }
+        )
+    }
+
+    // 2. Add / Edit Entry Dialog
     if (showEntryDialog) {
         AddEditEntryDialog(
             state = state,

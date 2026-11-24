@@ -7,13 +7,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -21,13 +25,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -49,14 +59,26 @@ import java.util.Locale
 fun MoreHubScreen(
     state: AppState,
     repo: LedgerRepository,
+    initialSubScreen: String = "MENU",
+    onConsumeInitialSubScreen: () -> Unit = {},
     onSettlePartner: (PartnerSummary) -> Unit,
     onAddPending: (PendingContribution) -> Unit,
     onCompletePending: (PendingContribution) -> Unit,
+    onUpdateCategories: (List<Category>) -> Unit,
+    onUpdateCurrencies: (List<String>) -> Unit,
+    onUpdateProfile: (BusinessConfig) -> Unit,
     onRestoreState: (AppState) -> Unit,
     onUpdateSecurity: (String, Boolean) -> Unit
 ) {
-    var subScreen by remember { mutableStateOf("MENU") }
+    var subScreen by remember { mutableStateOf(initialSubScreen) }
     val context = LocalContext.current
+
+    LaunchedEffect(initialSubScreen) {
+        if (initialSubScreen != "MENU") {
+            subScreen = initialSubScreen
+            onConsumeInitialSubScreen()
+        }
+    }
 
     AnimatedContent(
         targetState = subScreen,
@@ -83,8 +105,23 @@ fun MoreHubScreen(
                 ) {
                     item {
                         Text("More", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-                        Text("Tools, backups & security controls", fontSize = 12.sp, color = LavenderMuted)
+                        Text("Profile, preferences, backups & security", fontSize = 12.sp, color = LavenderMuted)
                         Spacer(Modifier.height(4.dp))
+                    }
+                    item {
+                        MoreMenuItem("👤", "Business Profile", "Edit business name, admin name & business logo") {
+                            subScreen = "PROFILE"
+                        }
+                    }
+                    item {
+                        MoreMenuItem("⊞", "Manage Categories", "Add, rename, delete & prioritize expense/revenue categories") {
+                            subScreen = "CATEGORIES"
+                        }
+                    }
+                    item {
+                        MoreMenuItem("$", "Manage Currencies", "Add, remove & prioritize currencies for revenue & expenses") {
+                            subScreen = "CURRENCIES"
+                        }
                     }
                     item {
                         MoreMenuItem("⇄", "Settle-Up (Reimbursements)", "Pay back partners who covered bills temporarily") {
@@ -119,6 +156,9 @@ fun MoreHubScreen(
                 }
             }
 
+            "PROFILE" -> BusinessProfileScreen(state, onUpdateProfile) { subScreen = "MENU" }
+            "CATEGORIES" -> ManageCategoriesScreen(state, onUpdateCategories) { subScreen = "MENU" }
+            "CURRENCIES" -> ManageCurrenciesScreen(state, onUpdateCurrencies) { subScreen = "MENU" }
             "SETTLE" -> SettleUpScreen(state, onSettlePartner) { subScreen = "MENU" }
             "PENDING" -> PendingContributionsScreen(state, onAddPending, onCompletePending) { subScreen = "MENU" }
             "BACKUP" -> BackupRestoreScreen(state, repo, onRestoreState) { subScreen = "MENU" }
@@ -184,6 +224,393 @@ private fun SubHeader(title: String, onBack: () -> Unit) {
     }
 }
 
+// ---- NEW: Social-style Business Profile Screen ----
+@Composable
+fun BusinessProfileScreen(
+    state: AppState,
+    onUpdateProfile: (BusinessConfig) -> Unit,
+    onBack: () -> Unit
+) {
+    val biz = state.business ?: return
+    val context = LocalContext.current
+    var businessName by remember(biz) { mutableStateOf(biz.businessName) }
+    var adminName by remember(biz) { mutableStateOf(biz.adminName) }
+    var logoBase64 by remember(biz) { mutableStateOf(biz.logoBase64) }
+    var saved by remember { mutableStateOf(false) }
+
+    val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            val encoded = ExportManager.compressUriToBase64(context, uri, maxDim = 400, quality = 80)
+            if (encoded != null) {
+                logoBase64 = encoded
+                saved = false
+            }
+        }
+    }
+    val logoBitmap = remember(logoBase64) {
+        if (logoBase64.isNotBlank()) ExportManager.decodeBase64ToBitmap(logoBase64) else null
+    }
+    val initials = remember(businessName) {
+        businessName.trim().split(" ").filter { it.isNotBlank() }.take(2)
+            .joinToString("") { it.take(1).uppercase(Locale.US) }.ifBlank { "PL" }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(JetBlack)
+            .verticalScroll(rememberScrollState())
+            .imePadding()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        SubHeader("Business Profile", onBack)
+
+        FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 24.dp) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(104.dp)
+                        .clip(CircleShape)
+                        .background(HeroGradientBrush)
+                        .border(2.dp, CyanElectric, CircleShape)
+                        .clickable { logoPicker.launch("image/*") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (logoBitmap != null) {
+                        Image(
+                            bitmap = logoBitmap.asImageBitmap(),
+                            contentDescription = "Business Logo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(initials, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = CyanElectric)
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { logoPicker.launch("image/*") },
+                        border = BorderStroke(1.dp, CyanElectric.copy(alpha = 0.65f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanElectric),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text(if (logoBase64.isBlank()) "Upload Logo" else "Change Logo", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+
+                    if (logoBase64.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = { logoBase64 = ""; saved = false },
+                            border = BorderStroke(1.dp, CoralSoft.copy(alpha = 0.6f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CoralSoft),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("Remove", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = businessName,
+                    onValueChange = { businessName = it; saved = false },
+                    label = { Text("Business Name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = darkFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = adminName,
+                    onValueChange = { adminName = it; saved = false },
+                    label = { Text("Admin Name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = darkFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Button(
+                    onClick = {
+                        if (businessName.isNotBlank()) {
+                            onUpdateProfile(
+                                biz.copy(
+                                    businessName = businessName.trim(),
+                                    adminName = adminName.trim().ifBlank { biz.adminName },
+                                    logoBase64 = logoBase64
+                                )
+                            )
+                            saved = true
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) { Text("Save Profile", fontWeight = FontWeight.Bold) }
+
+                if (saved) {
+                    Text("Profile updated!", color = EmeraldSoft, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+// ---- NEW: Manage & Prioritize Categories ----
+@Composable
+private fun ManageCategoriesScreen(
+    state: AppState,
+    onUpdateCategories: (List<Category>) -> Unit,
+    onBack: () -> Unit
+) {
+    var selectedType by remember { mutableStateOf(EntryType.EXPENSE) }
+    var newName by remember { mutableStateOf("") }
+    var editingCat by remember { mutableStateOf<Category?>(null) }
+    var editNameText by remember { mutableStateOf("") }
+
+    val filtered = state.categories.filter { it.forType == selectedType }
+
+    fun moveCategory(index: Int, delta: Int) {
+        val targetIdx = index + delta
+        if (targetIdx !in filtered.indices) return
+        val mutable = filtered.toMutableList()
+        val item = mutable.removeAt(index)
+        mutable.add(targetIdx, item)
+        val others = state.categories.filter { it.forType != selectedType }
+        onUpdateCategories(mutable + others)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(JetBlack)
+            .imePadding()
+            .padding(horizontal = 16.dp)
+    ) {
+        SubHeader("Manage Categories", onBack)
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FintechChip(
+                label = "Expenses",
+                selected = selectedType == EntryType.EXPENSE,
+                onClick = { selectedType = EntryType.EXPENSE },
+                modifier = Modifier.weight(1f)
+            )
+            FintechChip(
+                label = "Revenue",
+                selected = selectedType == EntryType.REVENUE,
+                onClick = { selectedType = EntryType.REVENUE },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = newName,
+                onValueChange = { newName = it },
+                placeholder = { Text("New ${selectedType.label.lowercase(Locale.US)} category...") },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = darkFieldColors(),
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    val trimmed = newName.trim()
+                    if (trimmed.isNotEmpty()) {
+                        val added = Category(name = trimmed, forType = selectedType)
+                        onUpdateCategories(listOf(added) + state.categories)
+                        newName = ""
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.height(54.dp)
+            ) { Icon(Icons.Default.Add, contentDescription = "Add") }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text("Use arrows to move top categories first", fontSize = 11.sp, color = LavenderMuted)
+        Spacer(Modifier.height(8.dp))
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            itemsIndexed(filtered, key = { _, c -> c.id }) { idx, cat ->
+                FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 16.dp) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(cat.name, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                            Text("Priority #${idx + 1}", fontSize = 11.sp, color = LavenderMuted)
+                        }
+                        IconButton(onClick = { moveCategory(idx, -1) }, enabled = idx > 0) {
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up", tint = if (idx > 0) CyanElectric else LavenderMuted.copy(alpha = 0.3f))
+                        }
+                        IconButton(onClick = { moveCategory(idx, 1) }, enabled = idx < filtered.lastIndex) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down", tint = if (idx < filtered.lastIndex) CyanElectric else LavenderMuted.copy(alpha = 0.3f))
+                        }
+                        IconButton(onClick = { editingCat = cat; editNameText = cat.name }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Rename", tint = LavenderMuted)
+                        }
+                        IconButton(onClick = { onUpdateCategories(state.categories.filter { it.id != cat.id }) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = CoralSoft)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    editingCat?.let { cat ->
+        AlertDialog(
+            onDismissRequest = { editingCat = null },
+            containerColor = AmethystElevated,
+            title = { Text("Rename Category", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = editNameText,
+                    onValueChange = { editNameText = it },
+                    label = { Text("Category Name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = darkFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = editNameText.trim()
+                        if (trimmed.isNotEmpty()) {
+                            onUpdateCategories(state.categories.map { if (it.id == cat.id) it.copy(name = trimmed) else it })
+                        }
+                        editingCat = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack)
+                ) { Text("Save", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingCat = null }) { Text("Cancel", color = LavenderMuted) }
+            }
+        )
+    }
+}
+
+// ---- NEW: Manage & Prioritize Currencies ----
+@Composable
+private fun ManageCurrenciesScreen(
+    state: AppState,
+    onUpdateCurrencies: (List<String>) -> Unit,
+    onBack: () -> Unit
+) {
+    val baseCurrency = state.business?.currency ?: "PKR"
+    var newCode by remember { mutableStateOf("") }
+    val list = if (state.currencies.isNotEmpty()) state.currencies else SUPPORTED_CURRENCIES
+
+    fun moveCurrency(index: Int, delta: Int) {
+        val target = index + delta
+        if (target !in list.indices) return
+        val mutable = list.toMutableList()
+        val item = mutable.removeAt(index)
+        mutable.add(target, item)
+        onUpdateCurrencies(mutable)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(JetBlack)
+            .imePadding()
+            .padding(horizontal = 16.dp)
+    ) {
+        SubHeader("Manage Currencies", onBack)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = newCode,
+                onValueChange = { if (it.length <= 5) newCode = it.uppercase(Locale.US).filter { ch -> ch.isLetter() } },
+                placeholder = { Text("Add currency code (e.g. TRY, INR)...") },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = darkFieldColors(),
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    val code = newCode.trim().uppercase(Locale.US)
+                    if (code.length >= 2 && !list.contains(code)) {
+                        onUpdateCurrencies(listOf(code) + list)
+                        newCode = ""
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.height(54.dp)
+            ) { Icon(Icons.Default.Add, contentDescription = "Add") }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text("Order here controls currency chips on Revenue & Expenses", fontSize = 11.sp, color = LavenderMuted)
+        Spacer(Modifier.height(8.dp))
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            itemsIndexed(list, key = { _, code -> code }) { idx, code ->
+                val isBase = code == baseCurrency
+                FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 16.dp) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(code, fontWeight = FontWeight.ExtraBold, color = Color.White, fontSize = 15.sp)
+                                if (isBase) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(CyanElectric.copy(alpha = 0.16f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) { Text("BASE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = CyanElectric) }
+                                }
+                            }
+                            Text("Priority #${idx + 1}", fontSize = 11.sp, color = LavenderMuted)
+                        }
+                        IconButton(onClick = { moveCurrency(idx, -1) }, enabled = idx > 0) {
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up", tint = if (idx > 0) CyanElectric else LavenderMuted.copy(alpha = 0.3f))
+                        }
+                        IconButton(onClick = { moveCurrency(idx, 1) }, enabled = idx < list.lastIndex) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down", tint = if (idx < list.lastIndex) CyanElectric else LavenderMuted.copy(alpha = 0.3f))
+                        }
+                        if (!isBase && list.size > 1) {
+                            IconButton(onClick = { onUpdateCurrencies(list.filter { it != code }) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove", tint = CoralSoft)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SettleUpScreen(
     state: AppState,
@@ -205,11 +632,7 @@ private fun SettleUpScreen(
                 ) {
                     Text("All Settled Up", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = EmeraldSoft)
                     Spacer(Modifier.height(6.dp))
-                    Text(
-                        "No pending partner reimbursements right now.",
-                        color = LavenderMuted,
-                        fontSize = 12.sp
-                    )
+                    Text("No pending partner reimbursements right now.", color = LavenderMuted, fontSize = 12.sp)
                 }
             }
         } else {
@@ -448,7 +871,7 @@ private fun BackupRestoreScreen(
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Save Backup (.ptb)", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 15.sp)
                 Text(
-                    "Includes all partners, entries, $receiptCount receipt photos, statements, and audit logs.",
+                    "Includes business logo, partners, categories, currencies, entries, $receiptCount receipts, statements, and audit logs.",
                     fontSize = 12.sp,
                     color = LavenderMuted
                 )
