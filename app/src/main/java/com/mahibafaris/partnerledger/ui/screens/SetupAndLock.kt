@@ -6,12 +6,19 @@ import android.os.Build
 import android.os.CancellationSignal
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -21,6 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -31,8 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.mahibafaris.partnerledger.data.LedgerRepository
 import com.mahibafaris.partnerledger.export.ExportManager
 import com.mahibafaris.partnerledger.model.*
-import com.mahibafaris.partnerledger.ui.theme.DatePickerField
-import com.mahibafaris.partnerledger.ui.theme.ThinDivider
+import com.mahibafaris.partnerledger.ui.theme.*
 
 @Composable
 fun WelcomeAndSetupFlow(
@@ -42,17 +49,26 @@ fun WelcomeAndSetupFlow(
 ) {
     var mode by remember { mutableStateOf("WELCOME") }
 
-    if (mode == "WELCOME") {
-        WelcomeScreen(
-            repo = repo,
-            onNewUser = { mode = "WIZARD" },
-            onRestored = onRestoreComplete
-        )
-    } else {
-        BusinessSetupWizard(
-            onBackToWelcome = { mode = "WELCOME" },
-            onComplete = onSetupComplete
-        )
+    AnimatedContent(
+        targetState = mode,
+        transitionSpec = {
+            (fadeIn(tween(240)) + slideInHorizontally { it / 6 }) togetherWith
+                (fadeOut(tween(180)) + slideOutHorizontally { -it / 6 })
+        },
+        label = "welcomeFlow"
+    ) { current ->
+        if (current == "WELCOME") {
+            WelcomeScreen(
+                repo = repo,
+                onNewUser = { mode = "WIZARD" },
+                onRestored = onRestoreComplete
+            )
+        } else {
+            BusinessSetupWizard(
+                onBackToWelcome = { mode = "WELCOME" },
+                onComplete = onSetupComplete
+            )
+        }
     }
 }
 
@@ -112,50 +128,54 @@ fun WelcomeScreen(
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(modifier = Modifier.fillMaxSize(), color = JetBlack) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
                 .padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = "PartnerLedger",
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                fontSize = 32.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = "Offline finance & equity ledger for partners",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray
+                fontSize = 13.sp,
+                color = LavenderMuted
             )
 
-            Spacer(Modifier.height(36.dp))
+            Spacer(Modifier.height(34.dp))
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
+            // Option 1: New User (Hero Gradient Card)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(HeroGradientBrush)
+                    .border(1.dp, CyanElectric.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
+                    .padding(20.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column {
                     Text("New User", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     Spacer(Modifier.height(6.dp))
                     Text(
                         text = "Start a fresh business ledger, add partners, and track expenses, revenue, and shares.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.9f)
+                        fontSize = 13.sp,
+                        color = LavenderMuted
                     )
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(16.dp))
                     Button(
                         onClick = onNewUser,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -164,28 +184,28 @@ fun WelcomeScreen(
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
+            // Option 2: Returning User
+            FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 24.dp) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Returning User", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Returning User", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Import your saved .ptb backup file to bring back all partners, transactions, receipt photos, statements, and logs.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.Gray
+                        text = "Import your saved .ptb backup file to bring back partners, transactions, receipt photos, and logs.",
+                        fontSize = 13.sp,
+                        color = LavenderMuted
                     )
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(16.dp))
                     OutlinedButton(
                         onClick = {
                             errorMessage = null
                             filePicker.launch(arrayOf("*/*"))
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        border = BorderStroke(1.dp, CyanElectric.copy(alpha = 0.65f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanElectric),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -196,7 +216,7 @@ fun WelcomeScreen(
 
             if (errorMessage != null) {
                 Spacer(Modifier.height(16.dp))
-                Text(errorMessage!!, color = MaterialTheme.colorScheme.error)
+                Text(errorMessage!!, color = CoralSoft, fontSize = 13.sp)
             }
         }
     }
@@ -204,10 +224,13 @@ fun WelcomeScreen(
     if (needsPassword && rawBackupText != null) {
         AlertDialog(
             onDismissRequest = { needsPassword = false },
-            title = { Text("Backup Password Required") },
+            containerColor = AmethystElevated,
+            titleContentColor = Color.White,
+            textContentColor = LavenderMuted,
+            title = { Text("Backup Password Required", fontWeight = FontWeight.Bold) },
             text = {
                 Column {
-                    Text("This backup file is encrypted. Enter the password you used when saving it.")
+                    Text("Enter the password used when saving this backup.")
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = passwordInput,
@@ -215,19 +238,24 @@ fun WelcomeScreen(
                         label = { Text("Backup Password") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = darkFieldColors(),
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (errorMessage != null) {
                         Spacer(Modifier.height(8.dp))
-                        Text(errorMessage!!, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                        Text(errorMessage!!, color = CoralSoft, fontSize = 12.sp)
                     }
                 }
             },
             confirmButton = {
-                Button(onClick = { tryDecode(rawBackupText!!, passwordInput) }) { Text("Unlock") }
+                Button(
+                    onClick = { tryDecode(rawBackupText!!, passwordInput) },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack)
+                ) { Text("Unlock", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { needsPassword = false }) { Text("Cancel") }
+                TextButton(onClick = { needsPassword = false }) { Text("Cancel", color = LavenderMuted) }
             }
         )
     }
@@ -237,26 +265,31 @@ fun WelcomeScreen(
         val receiptCount = restored.entries.count { !it.isDeleted && it.receiptImageBase64.isNotBlank() }
         AlertDialog(
             onDismissRequest = { pendingRestoreState = null },
-            title = { Text("Confirm Backup Restore") },
+            containerColor = AmethystElevated,
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = { Text("Confirm Backup Restore", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Business: ${biz?.businessName ?: "Unknown"}", fontWeight = FontWeight.Bold)
-                    Text("Currency: ${biz?.currency ?: "PKR"}")
-                    Text("Partners: ${restored.partners.size}")
-                    Text("Transactions: ${restored.entries.count { !it.isDeleted }} active ($receiptCount with receipts)")
-                    Text("Statements: ${restored.statements.size}")
-                    Text("Audit Logs: ${restored.auditLogs.size}")
+                    Text("Business: ${biz?.businessName ?: "Unknown"}", fontWeight = FontWeight.Bold, color = CyanElectric)
+                    Text("Currency: ${biz?.currency ?: "PKR"}", color = LavenderMuted)
+                    Text("Partners: ${restored.partners.size}", color = LavenderMuted)
+                    Text("Transactions: ${restored.entries.count { !it.isDeleted }} active ($receiptCount receipts)", color = LavenderMuted)
+                    Text("Statements: ${restored.statements.size}", color = LavenderMuted)
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    val toSave = restored
-                    pendingRestoreState = null
-                    onRestored(toSave)
-                }) { Text("Restore Everything") }
+                Button(
+                    onClick = {
+                        val toSave = restored
+                        pendingRestoreState = null
+                        onRestored(toSave)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack)
+                ) { Text("Restore Everything", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRestoreState = null }) { Text("Cancel") }
+                TextButton(onClick = { pendingRestoreState = null }) { Text("Cancel", color = LavenderMuted) }
             }
         )
     }
@@ -286,24 +319,38 @@ fun BusinessSetupWizard(
     var error by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Setup Business (Step $step of 4)") }) }
+        containerColor = JetBlack,
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = JetBlack, titleContentColor = Color.White),
+                title = {
+                    Column {
+                        Text("Setup Business", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text("Step $step of 4", fontSize = 12.sp, color = CyanElectric)
+                    }
+                }
+            )
+        }
     ) { pad ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(pad)
+                .imePadding()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             when (step) {
                 1 -> {
-                    item { Text("Business Details", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+                    item { Text("Business Details", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White) }
                     item {
                         OutlinedTextField(
                             value = businessName,
                             onValueChange = { businessName = it },
                             label = { Text("Business Name") },
                             singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = darkFieldColors(),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -313,39 +360,29 @@ fun BusinessSetupWizard(
                             onValueChange = { adminName = it },
                             label = { Text("Your Name (Admin)") },
                             singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = darkFieldColors(),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
                     item {
-                        Text("Main Business Currency", fontWeight = FontWeight.Medium)
+                        Text("Main Business Currency", fontSize = 13.sp, color = LavenderMuted)
                         Spacer(Modifier.height(6.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(SUPPORTED_CURRENCIES) { cur ->
-                                FilterChip(
-                                    selected = currency == cur,
-                                    onClick = { currency = cur },
-                                    label = { Text(cur) }
-                                )
+                                FintechChip(label = cur, selected = currency == cur, onClick = { currency = cur })
                             }
                         }
                     }
                     item {
-                        DatePickerField(
-                            label = "Business Start Date",
-                            value = startDate,
-                            onValueChange = { startDate = it }
-                        )
+                        DatePickerField(label = "Business Start Date", value = startDate, onValueChange = { startDate = it })
                     }
                 }
 
                 2 -> {
                     item {
-                        Text("Add Partners", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "Add everyone in the partnership. Ownership % is optional.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
+                        Text("Add Partners", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Ownership % is optional.", fontSize = 12.sp, color = LavenderMuted)
                     }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -354,6 +391,8 @@ fun BusinessSetupWizard(
                                 onValueChange = { newPartnerName = it },
                                 label = { Text("Partner Name") },
                                 singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                colors = darkFieldColors(),
                                 modifier = Modifier.weight(1.5f)
                             )
                             OutlinedTextField(
@@ -362,6 +401,8 @@ fun BusinessSetupWizard(
                                 label = { Text("% Share") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                colors = darkFieldColors(),
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -370,37 +411,35 @@ fun BusinessSetupWizard(
                             onClick = {
                                 val trimmed = newPartnerName.trim()
                                 if (trimmed.isNotEmpty()) {
-                                    partners.add(
-                                        Partner(
-                                            name = trimmed,
-                                            agreedOwnershipPct = newPartnerPct.toDoubleOrNull() ?: 0.0
-                                        )
-                                    )
+                                    partners.add(Partner(name = trimmed, agreedOwnershipPct = newPartnerPct.toDoubleOrNull() ?: 0.0))
                                     newPartnerName = ""
                                     newPartnerPct = ""
                                     error = null
                                 }
                             },
+                            border = BorderStroke(1.dp, CyanElectric.copy(alpha = 0.6f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanElectric),
+                            shape = RoundedCornerShape(14.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
-                            Text("Add Partner")
+                            Text("Add Partner", fontWeight = FontWeight.Bold)
                         }
                     }
                     items(partners) { p ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 16.dp) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                modifier = Modifier.fillMaxWidth().padding(14.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column {
-                                    Text(p.name, fontWeight = FontWeight.Bold)
-                                    Text("Agreed Ownership: ${p.agreedOwnershipPct}%", fontSize = 12.sp, color = Color.Gray)
+                                    Text(p.name, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("Agreed Ownership: ${p.agreedOwnershipPct}%", fontSize = 12.sp, color = LavenderMuted)
                                 }
                                 IconButton(onClick = { partners.remove(p) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Remove")
+                                    Icon(Icons.Default.Delete, contentDescription = "Remove", tint = CoralSoft)
                                 }
                             }
                         }
@@ -409,12 +448,8 @@ fun BusinessSetupWizard(
 
                 3 -> {
                     item {
-                        Text("Opening Capital (Optional)", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "If partners already put cash into the business, enter it here. Otherwise tap Next.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
+                        Text("Opening Capital (Optional)", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Enter initial cash invested, or skip.", fontSize = 12.sp, color = LavenderMuted)
                     }
                     items(partners) { p ->
                         OutlinedTextField(
@@ -423,6 +458,8 @@ fun BusinessSetupWizard(
                             label = { Text("${p.name}'s Opening Investment ($currency)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = darkFieldColors(),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -430,12 +467,8 @@ fun BusinessSetupWizard(
 
                 4 -> {
                     item {
-                        Text("App Lock (Optional)", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "Set a 4-digit PIN to protect your ledger, or leave blank to skip.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
+                        Text("App Lock (Optional)", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Set a 4-digit PIN or leave blank to skip.", fontSize = 12.sp, color = LavenderMuted)
                     }
                     item {
                         OutlinedTextField(
@@ -445,6 +478,8 @@ fun BusinessSetupWizard(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                             visualTransformation = PasswordVisualTransformation(),
                             singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = darkFieldColors(),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -455,8 +490,15 @@ fun BusinessSetupWizard(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Allow Fingerprint / Biometric Unlock")
-                                Switch(checked = biometricEnabled, onCheckedChange = { biometricEnabled = it })
+                                Text("Fingerprint / Biometric Unlock", color = Color.White)
+                                Switch(
+                                    checked = biometricEnabled,
+                                    onCheckedChange = { biometricEnabled = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = JetBlack,
+                                        checkedTrackColor = CyanElectric
+                                    )
+                                )
                             }
                         }
                     }
@@ -464,7 +506,7 @@ fun BusinessSetupWizard(
             }
 
             if (error != null) {
-                item { Text(error!!, color = MaterialTheme.colorScheme.error) }
+                item { Text(error!!, color = CoralSoft, fontSize = 13.sp) }
             }
 
             item {
@@ -472,61 +514,70 @@ fun BusinessSetupWizard(
                 ThinDivider()
                 Spacer(Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    OutlinedButton(onClick = {
-                        error = null
-                        if (step == 1) onBackToWelcome() else step -= 1
-                    }) { Text(if (step == 1) "Back" else "Previous") }
+                    OutlinedButton(
+                        onClick = {
+                            error = null
+                            if (step == 1) onBackToWelcome() else step -= 1
+                        },
+                        border = BorderStroke(1.dp, AmethystGlow.copy(alpha = 0.4f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = LavenderMuted),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text(if (step == 1) "Back" else "Previous") }
 
-                    Button(onClick = {
-                        error = null
-                        when (step) {
-                            1 -> if (businessName.isBlank()) error = "Please enter a business name." else step = 2
-                            2 -> if (partners.isEmpty()) error = "Add at least one partner." else step = 3
-                            3 -> step = 4
-                            4 -> {
-                                val biz = BusinessConfig(
-                                    businessName = businessName.trim(),
-                                    adminName = adminName.trim().ifBlank { partners.first().name },
-                                    currency = currency,
-                                    startDate = startDate.ifBlank { todayDateString() },
-                                    pin = pin,
-                                    biometricEnabled = biometricEnabled
-                                )
-                                val initialEntries = mutableListOf<LedgerEntry>()
-                                val initialLogs = mutableListOf<AuditLog>()
-                                partners.forEach { p ->
-                                    val amt = openingInvestments[p.id]?.toDoubleOrNull() ?: 0.0
-                                    if (amt > 0.0) {
-                                        val entry = LedgerEntry(
-                                            type = EntryType.INVESTMENT,
-                                            date = biz.startDate,
-                                            amount = amt,
-                                            partnerId = p.id,
-                                            note = "Opening capital"
-                                        )
-                                        initialEntries.add(entry)
-                                        initialLogs.add(
-                                            AuditLog(
-                                                action = "CREATE",
-                                                recordType = "INVESTMENT",
-                                                recordId = entry.id,
-                                                newValue = "${p.name}: ${formatMoney(biz.currency, amt)}"
-                                            )
-                                        )
-                                    }
-                                }
-                                onComplete(
-                                    AppState(
-                                        business = biz,
-                                        partners = partners.toList(),
-                                        categories = defaultCategories(),
-                                        entries = initialEntries,
-                                        auditLogs = initialLogs
+                    Button(
+                        onClick = {
+                            error = null
+                            when (step) {
+                                1 -> if (businessName.isBlank()) error = "Please enter a business name." else step = 2
+                                2 -> if (partners.isEmpty()) error = "Add at least one partner." else step = 3
+                                3 -> step = 4
+                                4 -> {
+                                    val biz = BusinessConfig(
+                                        businessName = businessName.trim(),
+                                        adminName = adminName.trim().ifBlank { partners.first().name },
+                                        currency = currency,
+                                        startDate = startDate.ifBlank { todayDateString() },
+                                        pin = pin,
+                                        biometricEnabled = biometricEnabled
                                     )
-                                )
+                                    val initialEntries = mutableListOf<LedgerEntry>()
+                                    val initialLogs = mutableListOf<AuditLog>()
+                                    partners.forEach { p ->
+                                        val amt = openingInvestments[p.id]?.toDoubleOrNull() ?: 0.0
+                                        if (amt > 0.0) {
+                                            val entry = LedgerEntry(
+                                                type = EntryType.INVESTMENT,
+                                                date = biz.startDate,
+                                                amount = amt,
+                                                partnerId = p.id,
+                                                note = "Opening capital"
+                                            )
+                                            initialEntries.add(entry)
+                                            initialLogs.add(
+                                                AuditLog(
+                                                    action = "CREATE",
+                                                    recordType = "INVESTMENT",
+                                                    recordId = entry.id,
+                                                    newValue = "${p.name}: ${formatMoney(biz.currency, amt)}"
+                                                )
+                                            )
+                                        }
+                                    }
+                                    onComplete(
+                                        AppState(
+                                            business = biz,
+                                            partners = partners.toList(),
+                                            categories = defaultCategories(),
+                                            entries = initialEntries,
+                                            auditLogs = initialLogs
+                                        )
+                                    )
+                                }
                             }
-                        }
-                    }) { Text(if (step == 4) "Finish Setup" else "Next") }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text(if (step == 4) "Finish Setup" else "Next", fontWeight = FontWeight.Bold) }
                 }
             }
         }
@@ -561,7 +612,7 @@ fun PinLockScreen(
                         onUnlocked()
                     }
                     override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
-if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED) {
+                        if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED) {
                             bioStatus = errString?.toString()
                         }
                     }
@@ -578,25 +629,30 @@ if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED) {
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(modifier = Modifier.fillMaxSize(), color = JetBlack) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
                 .padding(32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                Icons.Default.Lock,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(businessName, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text("Enter your PIN or use Fingerprint", color = Color.Gray)
-            Spacer(Modifier.height(20.dp))
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(AmethystElevated)
+                    .border(1.dp, CyanElectric.copy(alpha = 0.4f), RoundedCornerShape(20.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = null, tint = CyanElectric, modifier = Modifier.size(30.dp))
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(businessName, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+            Spacer(Modifier.height(4.dp))
+            Text("Enter your PIN or use Fingerprint", fontSize = 13.sp, color = LavenderMuted)
+            Spacer(Modifier.height(24.dp))
 
             OutlinedTextField(
                 value = entered,
@@ -609,34 +665,37 @@ if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = darkFieldColors(),
                 modifier = Modifier.fillMaxWidth()
             )
 
             if (wrong) {
                 Spacer(Modifier.height(8.dp))
-                Text("Incorrect PIN", color = MaterialTheme.colorScheme.error)
+                Text("Incorrect PIN", color = CoralSoft, fontSize = 13.sp)
             }
             if (bioStatus != null) {
                 Spacer(Modifier.height(8.dp))
-                Text(bioStatus!!, color = Color.Gray, fontSize = 12.sp)
+                Text(bioStatus!!, color = LavenderMuted, fontSize = 12.sp)
             }
 
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = { if (entered == expectedPin) onUnlocked() else wrong = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Unlock with PIN")
-            }
+                colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp)
+            ) { Text("Unlock with PIN", fontWeight = FontWeight.Bold) }
 
             if (biometricEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(
                     onClick = { launchBiometric() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Unlock with Fingerprint")
-                }
+                    border = BorderStroke(1.dp, CyanElectric.copy(alpha = 0.55f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanElectric),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) { Text("Unlock with Fingerprint", fontWeight = FontWeight.Bold) }
             }
         }
     }

@@ -1,7 +1,12 @@
 package com.mahibafaris.partnerledger.ui.screens
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,9 +19,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -39,83 +49,134 @@ fun PartnersScreen(
     val totals = remember(state) { LedgerCalculator.compute(state) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(JetBlack)
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(Modifier.height(14.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Partners", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Button(onClick = { showAddDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = null)
+            Column {
+                Text("Partners", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                Text("${state.partners.size} active equity holders", fontSize = 12.sp, color = LavenderMuted)
+            }
+            Button(
+                onClick = { showAddDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Add")
+                Text("Add", fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(totals.partnerSummaries) { ps ->
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(ps.partner.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "Capital Share: %.1f%% • Agreed: %.1f%%".format(
-                                Locale.US, ps.capitalSharePct, ps.partner.agreedOwnershipPct
-                            ),
-                            fontSize = 12.sp,
-                            color = Color.Gray
-                        )
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            items(totals.partnerSummaries, key = { it.partner.id }) { ps ->
+                val initials = ps.partner.name
+                    .trim()
+                    .split(" ")
+                    .filter { it.isNotBlank() }
+                    .take(2)
+                    .joinToString("") { it.take(1).uppercase(Locale.US) }
+                    .ifBlank { ps.partner.name.take(2).uppercase(Locale.US) }
 
-                        Spacer(Modifier.height(8.dp))
-                        ThinDivider()
-                        Spacer(Modifier.height(8.dp))
+                val animShare by animateFloatAsState(
+                    targetValue = (ps.capitalSharePct.toFloat() / 100f).coerceIn(0.02f, 1f),
+                    animationSpec = tween(700, easing = FastOutSlowInEasing),
+                    label = "shareBar"
+                )
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column {
-                                Text("Invested", fontSize = 11.sp, color = Color.Gray)
-                                Text(formatMoney(biz.currency, ps.invested), fontWeight = FontWeight.SemiBold)
+                FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 24.dp) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(HeroGradientBrush)
+                                    .border(1.dp, CyanElectric.copy(alpha = 0.4f), RoundedCornerShape(14.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(initials, color = CyanElectric, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                             }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("Withdrawn", fontSize = 11.sp, color = Color.Gray)
-                                Text(formatMoney(biz.currency, ps.withdrawn), fontWeight = FontWeight.SemiBold)
+                            Column {
+                                Text(ps.partner.name, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text(
+                                    "Capital Share: %.1f%% • Agreed: %.1f%%".format(
+                                        Locale.US, ps.capitalSharePct, ps.partner.agreedOwnershipPct
+                                    ),
+                                    fontSize = 11.sp,
+                                    color = LavenderMuted
+                                )
                             }
                         }
 
-                        Spacer(Modifier.height(8.dp))
+                        // Animated Electric Cyan Capital Share Progress Bar
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(JetBlack)
+                                .border(0.5.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(50))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .fillMaxWidth(animShare)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Brush.horizontalGradient(listOf(AmethystGlow, CyanElectric)))
+                            )
+                        }
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column {
-                                Text("Profit Share", fontSize = 11.sp, color = Color.Gray)
-                                Text(
-                                    formatMoney(biz.currency, ps.profitShare),
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = BrandSecondary
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("Net Position", fontSize = 11.sp, color = Color.Gray)
-                                Text(formatMoney(biz.currency, ps.netPosition), fontWeight = FontWeight.Bold)
-                            }
+                        // 2x2 Dark Stat Tiles
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            PartnerStatTile("INVESTED", formatMoney(biz.currency, ps.invested), Color.White, Modifier.weight(1f))
+                            PartnerStatTile("WITHDRAWN", formatMoney(biz.currency, ps.withdrawn), Color.White, Modifier.weight(1f))
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            PartnerStatTile(
+                                "PROFIT SHARE",
+                                formatMoney(biz.currency, ps.profitShare),
+                                if (ps.profitShare < 0) CoralSoft else EmeraldSoft,
+                                Modifier.weight(1f)
+                            )
+                            PartnerStatTile("NET POSITION", formatMoney(biz.currency, ps.netPosition), CyanElectric, Modifier.weight(1f))
                         }
 
                         if (ps.owedByBusiness > 0.0) {
-                            Spacer(Modifier.height(8.dp))
                             Text(
                                 "Owed in Settle-Up: ${formatMoney(biz.currency, ps.owedByBusiness)}",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = BrandAccent
+                                color = AmberSoft
                             )
                         }
 
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        // Action Buttons
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(
                                 onClick = { ExportManager.sharePartnerAsImage(context, biz, ps) },
+                                border = BorderStroke(1.dp, ElevatedBorderColor),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = AmethystElevated,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier.weight(1f)
-                            ) { Text("WhatsApp Image", fontSize = 12.sp) }
+                            ) { Text("WhatsApp Image", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
                             OutlinedButton(
                                 onClick = {
                                     val partnerEntries = state.entries
@@ -125,8 +186,14 @@ fun PartnersScreen(
                                         .sortedByDescending { it.date + it.createdAt }
                                     ExportManager.sharePartnerStatementPdf(context, biz, ps, partnerEntries)
                                 },
+                                border = BorderStroke(1.dp, ElevatedBorderColor),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = AmethystElevated,
+                                    contentColor = CyanElectric
+                                ),
+                                shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Share PDF", fontSize = 12.sp) }
+                            ) { Text("Share PDF", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
                         }
                     }
                 }
@@ -139,7 +206,8 @@ fun PartnersScreen(
         var pct by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
-            title = { Text("Add Partner") },
+            containerColor = AmethystElevated,
+            title = { Text("Add Partner", color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
@@ -147,6 +215,8 @@ fun PartnersScreen(
                         onValueChange = { name = it },
                         label = { Text("Partner Name") },
                         singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = darkFieldColors(),
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
@@ -155,22 +225,42 @@ fun PartnersScreen(
                         label = { Text("Agreed Ownership % (Optional)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = darkFieldColors(),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
             },
             confirmButton = {
-                Button(onClick = {
-                    if (name.isNotBlank()) {
-                        onAddPartner(Partner(name = name.trim(), agreedOwnershipPct = pct.toDoubleOrNull() ?: 0.0))
-                        showAddDialog = false
-                    }
-                }) { Text("Add") }
+                Button(
+                    onClick = {
+                        if (name.isNotBlank()) {
+                            onAddPartner(Partner(name = name.trim(), agreedOwnershipPct = pct.toDoubleOrNull() ?: 0.0))
+                            showAddDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack)
+                ) { Text("Add", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { showAddDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showAddDialog = false }) { Text("Cancel", color = LavenderMuted) }
             }
         )
+    }
+}
+
+@Composable
+private fun PartnerStatTile(label: String, value: String, valueColor: Color, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(JetBlack.copy(alpha = 0.8f))
+            .border(1.dp, AmethystGlow.copy(alpha = 0.16f), RoundedCornerShape(14.dp))
+            .padding(10.dp)
+    ) {
+        Text(label, fontSize = 10.sp, color = LavenderMuted, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text(value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = valueColor, maxLines = 1)
     }
 }
 
@@ -201,30 +291,46 @@ fun ReportsScreen(
             .entries.sortedByDescending { it.value }
     }
 
-    // Monthly Trend Data (last 6 months with activity)
     val monthlyTrend = remember(state) {
         val active = state.entries.filter { !it.isDeleted && it.date.length >= 7 }
         val months = active.map { it.date.substring(0, 7) }.distinct().sorted().takeLast(6)
         months.map { ym ->
             val rev = active.filter { it.type == EntryType.REVENUE && it.date.startsWith(ym) }.sumOf { it.amount }
             val exp = active.filter { it.type == EntryType.EXPENSE && it.date.startsWith(ym) }.sumOf { it.amount }
-            Triple(ym.substring(5), rev, exp) // Month label e.g. "11"
+            Triple(ym.substring(5), rev, exp)
         }
     }
 
+    // Trigger chart entrance animation
+    var chartStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { chartStarted = true }
+    val chartProgress by animateFloatAsState(
+        targetValue = if (chartStarted) 1f else 0f,
+        animationSpec = tween(800, easing = FastOutSlowInEasing),
+        label = "chartAnim"
+    )
+
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(JetBlack)
+            .imePadding()
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item { Text("Reports & Charts", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
-
-        // 1. Category Donut Chart
         item {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Expenses by Category", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("Reports & Charts", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+            Text("Financial breakdown & audit statements", fontSize = 12.sp, color = LavenderMuted)
+        }
+
+        // 1. Animated Category Donut Chart
+        item {
+            FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 24.dp) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Expenses by Category", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                     if (expenseByCat.isEmpty()) {
-                        Text("Add some expenses to see the category donut chart.", color = Color.Gray, fontSize = 13.sp)
+                        Text("Add some expenses to see the category donut chart.", color = LavenderMuted, fontSize = 13.sp)
                     } else {
                         val totalExp = expenseByCat.sumOf { it.value }.coerceAtLeast(0.01)
                         Row(
@@ -232,33 +338,47 @@ fun ReportsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Canvas(modifier = Modifier.size(130.dp).padding(8.dp)) {
-                                var startAngle = -90f
-                                expenseByCat.forEachIndexed { idx, entry ->
-                                    val sweep = ((entry.value / totalExp) * 360.0).toFloat()
+                            Box(modifier = Modifier.size(126.dp), contentAlignment = Alignment.Center) {
+                                Canvas(modifier = Modifier.fillMaxSize().padding(8.dp)) {
                                     drawArc(
-                                        color = ChartPalette[idx % ChartPalette.size],
-                                        startAngle = startAngle,
-                                        sweepAngle = sweep,
+                                        color = AmethystElevated,
+                                        startAngle = 0f,
+                                        sweepAngle = 360f,
                                         useCenter = false,
-                                        style = Stroke(width = 28f)
+                                        style = Stroke(width = 26f)
                                     )
-                                    startAngle += sweep
+                                    var startAngle = -90f
+                                    expenseByCat.forEachIndexed { idx, entry ->
+                                        val sweep = ((entry.value / totalExp) * 360.0).toFloat() * chartProgress
+                                        drawArc(
+                                            color = ChartPalette[idx % ChartPalette.size],
+                                            startAngle = startAngle,
+                                            sweepAngle = sweep,
+                                            useCenter = false,
+                                            style = Stroke(width = 26f, cap = StrokeCap.Round)
+                                        )
+                                        startAngle += sweep
+                                    }
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("100%", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = Color.White)
+                                    Text("EXPENSES", fontSize = 9.sp, color = LavenderMuted)
                                 }
                             }
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 expenseByCat.take(6).forEachIndexed { idx, (cat, amt) ->
                                     val pct = (amt / totalExp) * 100.0
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Box(
                                             modifier = Modifier
                                                 .size(10.dp)
-                                                .background(ChartPalette[idx % ChartPalette.size], CircleShape)
+                                                .clip(CircleShape)
+                                                .background(ChartPalette[idx % ChartPalette.size])
                                         )
-                                        Spacer(Modifier.width(6.dp))
+                                        Spacer(Modifier.width(8.dp))
                                         Column {
-                                            Text("$cat (%.0f%%)".format(Locale.US, pct), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                            Text(formatMoney(biz.currency, amt), fontSize = 11.sp, color = Color.Gray)
+                                            Text("$cat (%.0f%%)".format(Locale.US, pct), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                            Text(formatMoney(biz.currency, amt), fontSize = 11.sp, color = LavenderMuted)
                                         }
                                     }
                                 }
@@ -269,50 +389,64 @@ fun ReportsScreen(
             }
         }
 
-        // 2. Monthly Revenue vs Expense Bar Chart
+        // 2. Animated Monthly Revenue vs Expenses Bar Chart
         item {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+            FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 24.dp) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Monthly Revenue vs Expenses", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("Monthly Revenue vs Expenses", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(10.dp).background(BrandSecondary, CircleShape))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Revenue", fontSize = 12.sp)
+                            Box(Modifier.size(9.dp).clip(CircleShape).background(EmeraldSoft))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Revenue", fontSize = 11.sp, color = LavenderMuted)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(10.dp).background(BrandDanger, CircleShape))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Expenses", fontSize = 12.sp)
+                            Box(Modifier.size(9.dp).clip(CircleShape).background(CoralSoft))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Expenses", fontSize = 11.sp, color = LavenderMuted)
                         }
                     }
 
                     if (monthlyTrend.isEmpty()) {
-                        Text("Log revenue or expenses to see monthly bars.", color = Color.Gray, fontSize = 13.sp)
+                        Text("Log revenue or expenses to see monthly bars.", color = LavenderMuted, fontSize = 13.sp)
                     } else {
                         val maxVal = monthlyTrend.maxOf { maxOf(it.second, it.third) }.coerceAtLeast(1.0)
                         Canvas(modifier = Modifier.fillMaxWidth().height(150.dp)) {
+                            val dash = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                            for (i in 0..3) {
+                                val y = size.height * (i / 3f)
+                                drawLine(
+                                    color = AmethystGlow.copy(alpha = 0.22f),
+                                    start = Offset(0f, y),
+                                    end = Offset(size.width, y),
+                                    strokeWidth = 1.5f,
+                                    pathEffect = if (i < 3) dash else null
+                                )
+                            }
+
                             val groupWidth = size.width / monthlyTrend.size
-                            val barW = (groupWidth * 0.28f).coerceAtMost(36f)
+                            val barW = (groupWidth * 0.24f).coerceAtMost(38f)
                             monthlyTrend.forEachIndexed { idx, (_, rev, exp) ->
                                 val centerX = groupWidth * idx + groupWidth / 2f
-                                val revH = ((rev / maxVal) * (size.height - 16f)).toFloat()
-                                val expH = ((exp / maxVal) * (size.height - 16f)).toFloat()
-                                drawRect(
-                                    color = BrandSecondary,
-                                    topLeft = Offset(centerX - barW - 3f, size.height - revH),
-                                    size = Size(barW, revH)
+                                val revH = (((rev / maxVal) * (size.height - 14f)).toFloat() * chartProgress).coerceAtLeast(4f)
+                                val expH = (((exp / maxVal) * (size.height - 14f)).toFloat() * chartProgress).coerceAtLeast(4f)
+                                drawRoundRect(
+                                    color = EmeraldSoft,
+                                    topLeft = Offset(centerX - barW - 4f, size.height - revH),
+                                    size = Size(barW, revH),
+                                    cornerRadius = CornerRadius(10f, 10f)
                                 )
-                                drawRect(
-                                    color = BrandDanger,
-                                    topLeft = Offset(centerX + 3f, size.height - expH),
-                                    size = Size(barW, expH)
+                                drawRoundRect(
+                                    color = CoralSoft,
+                                    topLeft = Offset(centerX + 4f, size.height - expH),
+                                    size = Size(barW, expH),
+                                    cornerRadius = CornerRadius(10f, 10f)
                                 )
                             }
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                             monthlyTrend.forEach { (monthLabel, _, _) ->
-                                Text("M$monthLabel", fontSize = 11.sp, color = Color.Gray)
+                                Text("M$monthLabel", fontSize = 11.sp, color = LavenderMuted, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -322,16 +456,26 @@ fun ReportsScreen(
 
         // 3. Revenue by Network / Source
         item {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Revenue by Network / Source", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 24.dp) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Revenue by Network / Source", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                     if (revenueBySource.isEmpty()) {
-                        Text("No revenue logged yet.", color = Color.Gray, fontSize = 13.sp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(JetBlack.copy(alpha = 0.7f))
+                                .border(1.dp, AmethystGlow.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
+                                .padding(18.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No revenue logged yet.", color = LavenderMuted, fontSize = 12.sp)
+                        }
                     } else {
                         revenueBySource.forEach { (src, amt) ->
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(src, fontSize = 14.sp)
-                                Text(formatMoney(biz.currency, amt), fontWeight = FontWeight.SemiBold, color = BrandSecondary)
+                                Text(src, fontSize = 13.sp, color = Color.White)
+                                Text(formatMoney(biz.currency, amt), fontWeight = FontWeight.Bold, color = EmeraldSoft, fontSize = 13.sp)
                             }
                         }
                     }
@@ -341,41 +485,48 @@ fun ReportsScreen(
 
         // 4. Generate Numbered Statement
         item {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Generate Numbered Statement", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 24.dp) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Generate Numbered Statement", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                     DatePickerField(label = "As of Date", value = asOfDate, onValueChange = { asOfDate = it })
                     Button(
                         onClick = { onCreateStatement(asOfDate.ifBlank { todayDateString() }) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Create Statement #${state.statements.size + 1}") }
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) { Text("Create Statement #${state.statements.size + 1}", fontWeight = FontWeight.Bold) }
                 }
             }
         }
 
-        // 5. Saved Statements with WhatsApp Image + PDF Share
+        // 5. Saved Statements
         if (state.statements.isNotEmpty()) {
-            item { Text("Saved Statements", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-            items(state.statements.sortedByDescending { it.number }) { stmt ->
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+            item { Text("Saved Statements", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White) }
+            items(state.statements.sortedByDescending { it.number }, key = { it.id }) { stmt ->
+                FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 18.dp) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text("Statement #${stmt.number}  •  As of ${stmt.asOfDate}", fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(2.dp))
+                        Text("Statement #${stmt.number}  •  As of ${stmt.asOfDate}", fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(Modifier.height(3.dp))
                         Text(
                             "Profit: ${formatMoney(biz.currency, stmt.netProfit)} • Cash: ${formatMoney(biz.currency, stmt.currentBalance)}",
                             fontSize = 12.sp,
-                            color = Color.Gray
+                            color = LavenderMuted
                         )
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(
                                 onClick = { ExportManager.shareStatementAsImage(context, biz, stmt) },
+                                colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
-                            ) { Text("WhatsApp Image", fontSize = 12.sp) }
+                            ) { Text("WhatsApp Image", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                             OutlinedButton(
                                 onClick = { ExportManager.shareNumberedStatementPdf(context, biz, stmt) },
+                                border = BorderStroke(1.dp, CyanElectric.copy(alpha = 0.55f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanElectric),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Share PDF", fontSize = 12.sp) }
+                            ) { Text("Share PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                         }
                     }
                 }

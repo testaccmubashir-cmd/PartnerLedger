@@ -3,16 +3,27 @@ package com.mahibafaris.partnerledger.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -28,20 +39,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.mahibafaris.partnerledger.data.LedgerCalculator
 import com.mahibafaris.partnerledger.export.ExportManager
 import com.mahibafaris.partnerledger.model.*
-import com.mahibafaris.partnerledger.ui.theme.BrandAccent
-import com.mahibafaris.partnerledger.ui.theme.BrandDanger
-import com.mahibafaris.partnerledger.ui.theme.BrandSecondary
-import com.mahibafaris.partnerledger.ui.theme.DatePickerField
+import com.mahibafaris.partnerledger.ui.theme.*
 import java.util.Locale
 
 @Composable
 fun HomeDashboardScreen(
     state: AppState,
     onAddClick: (EntryType) -> Unit,
-    onEntryClick: (LedgerEntry) -> Unit
+    onEntryClick: (LedgerEntry) -> Unit,
+    onViewAllLedger: () -> Unit
 ) {
     val biz = state.business ?: return
     val totals = remember(state) { LedgerCalculator.compute(state) }
@@ -51,84 +62,183 @@ fun HomeDashboardScreen(
     val pMap = remember(state.partners) { state.partners.associateBy { it.id } }
     val cMap = remember(state.categories) { state.categories.associateBy { it.id } }
 
+    // Smooth animated numbers
+    val animBalance by animateFloatAsState(
+        targetValue = totals.currentBalance.toFloat(),
+        animationSpec = tween(650, easing = FastOutSlowInEasing),
+        label = "animBal"
+    )
+    val animInvested by animateFloatAsState(totals.totalInvested.toFloat(), tween(600), label = "animInv")
+    val animRevenue by animateFloatAsState(totals.totalRevenue.toFloat(), tween(600), label = "animRev")
+    val animExpenses by animateFloatAsState(totals.totalExpenses.toFloat(), tween(600), label = "animExp")
+    val animWithdrawn by animateFloatAsState(totals.totalWithdrawn.toFloat(), tween(600), label = "animWd")
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .background(JetBlack)
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Header Row with Base Currency Pill
         item {
-            Text(biz.businessName, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("Base currency: ${biz.currency}", fontSize = 13.sp, color = Color.Gray)
-        }
-
-        item {
-            Card(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Business Cash Balance", color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        formatMoney(biz.currency, totals.currentBalance),
-                        color = Color.White,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    val profitColor = if (totals.netProfit >= 0) Color(0xFFA7F3D0) else Color(0xFFFCA5A5)
-                    Text(
-                        "Net Profit / Loss: ${formatMoney(biz.currency, totals.netProfit)}",
-                        color = profitColor,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp
-                    )
+                Column {
+                    Text(biz.businessName, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                    Text("Partner Finance Ledger", fontSize = 12.sp, color = LavenderMuted)
+                }
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(AmethystElevated)
+                        .border(1.dp, ElevatedBorderColor, RoundedCornerShape(50))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(CyanElectric))
+                    Text("Base: ${biz.currency}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 }
             }
         }
 
+        // Hero Gradient Card
         item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatCard("Total Invested", formatMoney(biz.currency, totals.totalInvested), BrandSecondary, Modifier.weight(1f))
-                StatCard("Total Revenue", formatMoney(biz.currency, totals.totalRevenue), BrandSecondary, Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatCard("Total Expenses", formatMoney(biz.currency, totals.totalExpenses), BrandDanger, Modifier.weight(1f))
-                StatCard("Total Withdrawn", formatMoney(biz.currency, totals.totalWithdrawn), BrandAccent, Modifier.weight(1f))
-            }
-        }
-
-        item {
-            Text("Quick Add", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            Spacer(Modifier.height(6.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(EntryType.values()) { t ->
-                    FilledTonalButton(onClick = { onAddClick(t) }) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(t.label)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(HeroGradientBrush)
+                    .border(1.dp, CyanElectric.copy(alpha = 0.34f), RoundedCornerShape(24.dp))
+                    .padding(20.dp)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Business Cash Balance", color = LavenderMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(JetBlack.copy(alpha = 0.45f))
+                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(50))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text("LIVE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyanElectric)
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        formatMoney(biz.currency, animBalance.toDouble()),
+                        color = Color.White,
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    val profitColor = if (totals.netProfit >= 0) EmeraldSoft else CoralSoft
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(JetBlack.copy(alpha = 0.45f))
+                            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(profitColor))
+                        Text("Net Profit / Loss:", fontSize = 11.sp, color = LavenderMuted)
+                        Text(
+                            formatMoney(biz.currency, totals.netProfit),
+                            color = profitColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }
         }
 
-        item { Text("Recent Activity", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        // 2x2 KPI Grid
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatCard("Total Invested", formatMoney(biz.currency, animInvested.toDouble()), EmeraldSoft, "↗", Modifier.weight(1f))
+                StatCard("Total Revenue", formatMoney(biz.currency, animRevenue.toDouble()), EmeraldSoft, "$", Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatCard("Total Expenses", formatMoney(biz.currency, animExpenses.toDouble()), CoralSoft, "↘", Modifier.weight(1f))
+                StatCard("Total Withdrawn", formatMoney(biz.currency, animWithdrawn.toDouble()), AmberSoft, "⇄", Modifier.weight(1f))
+            }
+        }
+
+        // Quick Add Chips
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Quick Add", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                Text("Tap to log", fontSize = 11.sp, color = LavenderMuted)
+            }
+            Spacer(Modifier.height(8.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(EntryType.values()) { t ->
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(AmethystElevated)
+                            .border(1.dp, ElevatedBorderColor, RoundedCornerShape(50))
+                            .clickable { onAddClick(t) }
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text("+", color = CyanElectric, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                        Text(t.label, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        // Recent Activity Header
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Recent Activity", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                Text(
+                    "View All",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = CyanElectric,
+                    modifier = Modifier.clickable { onViewAllLedger() }
+                )
+            }
+        }
 
         if (recent.isEmpty()) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 18.dp) {
                     Text(
-                        "No transactions yet. Tap + Add to log your first expense, revenue, or investment.",
-                        modifier = Modifier.padding(16.dp),
-                        color = Color.Gray
+                        "No transactions yet. Tap a Quick Add button above to log your first entry.",
+                        modifier = Modifier.padding(18.dp),
+                        color = LavenderMuted,
+                        fontSize = 13.sp
                     )
                 }
             }
         } else {
-            items(recent) { entry ->
+            items(recent, key = { it.id }) { entry ->
                 EntryRowCard(
                     entry = entry,
                     baseCurrency = biz.currency,
@@ -143,17 +253,31 @@ fun HomeDashboardScreen(
 }
 
 @Composable
-fun StatCard(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
-    Card(modifier = modifier, shape = RoundedCornerShape(12.dp)) {
+fun StatCard(label: String, value: String, accent: Color, badge: String, modifier: Modifier = Modifier) {
+    FintechCard(modifier = modifier, cornerRadius = 18.dp) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(label, fontSize = 12.sp, color = Color.Gray)
-            Spacer(Modifier.height(4.dp))
-            Text(value, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = accent)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(label, fontSize = 11.sp, color = LavenderMuted, fontWeight = FontWeight.Medium)
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(accent.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(badge, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = accent)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = accent, maxLines = 1)
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsListScreen(
     state: AppState,
@@ -186,58 +310,88 @@ fun TransactionsListScreen(
             .sortedByDescending { it.date + it.createdAt }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(JetBlack)
+            .imePadding()
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(Modifier.height(14.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Ledger", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Button(onClick = onAddClick) {
-                Icon(Icons.Default.Add, contentDescription = null)
+            Text("Ledger", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+            Button(
+                onClick = onAddClick,
+                colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Add")
+                Text("Add", fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
 
         OutlinedTextField(
             value = search,
             onValueChange = { search = it },
-            placeholder = { Text("Search note, vendor, partner, date...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            placeholder = { Text("Search note, vendor, partner, date...", fontSize = 13.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = LavenderMuted) },
             singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+            colors = darkFieldColors(),
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
 
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                FilterChip(selected = filterType == null, onClick = { filterType = null }, label = { Text("All") })
+                FintechChip(label = "All", selected = filterType == null, onClick = { filterType = null })
             }
             items(EntryType.values()) { t ->
-                FilterChip(
+                FintechChip(
+                    label = t.label,
                     selected = filterType == t,
-                    onClick = { filterType = if (filterType == t) null else t },
-                    label = { Text(t.label) }
+                    onClick = { filterType = if (filterType == t) null else t }
                 )
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(filtered) { entry ->
-                EntryRowCard(
-                    entry = entry,
-                    baseCurrency = biz.currency,
-                    partnerName = pMap[entry.partnerId]?.name,
-                    paidByName = pMap[entry.paidByPartnerId]?.name,
-                    categoryName = cMap[entry.categoryId]?.name,
-                    onClick = { onEntryClick(entry) }
-                )
+        if (filtered.isEmpty()) {
+            FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 18.dp) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("No matching entries", fontWeight = FontWeight.Bold, color = Color.White)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Try adjusting your search or filter chips.", fontSize = 12.sp, color = LavenderMuted)
+                }
+            }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                items(filtered, key = { it.id }) { entry ->
+                    EntryRowCard(
+                        entry = entry,
+                        baseCurrency = biz.currency,
+                        partnerName = pMap[entry.partnerId]?.name,
+                        paidByName = pMap[entry.paidByPartnerId]?.name,
+                        categoryName = cMap[entry.categoryId]?.name,
+                        onClick = { onEntryClick(entry) }
+                    )
+                }
             }
         }
     }
@@ -252,81 +406,97 @@ fun EntryRowCard(
     categoryName: String?,
     onClick: () -> Unit
 ) {
+    val isPositive = entry.type == EntryType.INVESTMENT || entry.type == EntryType.REVENUE
     val color = when (entry.type) {
-        EntryType.INVESTMENT, EntryType.REVENUE -> BrandSecondary
-        EntryType.EXPENSE -> BrandDanger
-        EntryType.WITHDRAWAL -> BrandAccent
+        EntryType.INVESTMENT, EntryType.REVENUE -> EmeraldSoft
+        EntryType.EXPENSE -> CoralSoft
+        EntryType.WITHDRAWAL -> AmberSoft
     }
-    val prefix = when (entry.type) {
-        EntryType.INVESTMENT, EntryType.REVENUE -> "+"
-        EntryType.EXPENSE, EntryType.WITHDRAWAL -> "-"
-    }
+    val prefix = if (isPositive) "+" else "-"
+    val arrow = if (isPositive) "↓" else "↑"
     val origText = formatEntryOriginal(entry, baseCurrency)
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+    FintechCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 18.dp, onClick = onClick) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(color.copy(alpha = 0.14f))
+                    .border(1.dp, color.copy(alpha = 0.30f), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Text(arrow, color = color, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         text = buildString {
                             append(entry.type.label)
                             if (!categoryName.isNullOrBlank()) append(" • $categoryName")
                             else if (!partnerName.isNullOrBlank()) append(" • $partnerName")
-                            if (entry.receiptImageBase64.isNotBlank()) append("  [Receipt]")
                         },
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        color = Color.White
                     )
-                    if (entry.vendorOrSource.isNotBlank()) {
-                        Text(entry.vendorOrSource, fontSize = 13.sp, color = Color.DarkGray)
+                    if (entry.receiptImageBase64.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(CyanElectric.copy(alpha = 0.15f))
+                                .border(1.dp, CyanElectric.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            Text("[Receipt]", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = CyanElectric)
+                        }
                     }
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "$prefix${formatMoney(baseCurrency, entry.amount)}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = color
-                    )
-                    if (origText != null) {
-                        Text(text = "($origText)", fontSize = 11.sp, color = Color.Gray)
-                    }
+                if (entry.vendorOrSource.isNotBlank()) {
+                    Text(entry.vendorOrSource, fontSize = 12.sp, color = Color.White.copy(alpha = 0.8f))
+                }
+                Spacer(Modifier.height(3.dp))
+                Text("${entry.date} • ${entry.paymentMethod}", fontSize = 11.sp, color = LavenderMuted)
+                if (entry.note.isNotBlank()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(entry.note, fontSize = 11.sp, color = LavenderMuted)
                 }
             }
 
-            Spacer(Modifier.height(4.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${entry.date} • ${entry.paymentMethod}", fontSize = 11.sp, color = Color.Gray)
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "$prefix${formatMoney(baseCurrency, entry.amount)}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = color
+                )
+                if (origText != null) {
+                    Text(text = "($origText)", fontSize = 10.sp, color = LavenderMuted)
+                }
                 if (entry.type == EntryType.EXPENSE && paidByName != null) {
+                    Spacer(Modifier.height(3.dp))
                     val modeTag = if (entry.countAsInvestment) "Investment" else "Reimburse"
                     Text(
                         text = "Paid by $paidByName ($modeTag)",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (entry.countAsInvestment) BrandSecondary else BrandAccent
+                        color = if (entry.countAsInvestment) EmeraldSoft else AmberSoft
                     )
                 }
-            }
-
-            if (entry.note.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(entry.note, fontSize = 12.sp, color = Color.Gray)
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Custom full-width, keyboard-aware dark modal dialog.
+ * Fixes the Android keypad overlap bug by using imePadding() + verticalScroll inside a resizable Dialog.
+ */
 @Composable
 fun AddEditEntryDialog(
     state: AppState,
@@ -403,376 +573,427 @@ fun AddEditEntryDialog(
         state.categories.filter { it.forType == type }
     }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(if (existing == null) "Add Transaction" else "Edit Transaction")
-                if (existing != null && onDelete != null) {
-                    IconButton(onClick = { onDelete(existing) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = BrandDanger)
-                    }
-                }
-            }
-        },
-        text = {
-            LazyColumn(
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.72f))
+                .imePadding()
+                .padding(horizontal = 14.dp, vertical = 20.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 520.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .fillMaxHeight(0.90f),
+                shape = RoundedCornerShape(26.dp),
+                color = AmethystElevated,
+                border = BorderStroke(1.dp, ElevatedBorderColor)
             ) {
-                item {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(EntryType.values()) { t ->
-                            FilterChip(
-                                selected = type == t,
-                                onClick = {
-                                    type = t
-                                    if (t == EntryType.INVESTMENT || t == EntryType.WITHDRAWAL) {
-                                        selectedCurrency = baseCurrency
-                                    }
-                                },
-                                label = { Text(t.label, fontSize = 12.sp) }
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Header + Type Selector
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp, vertical = 14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (existing == null) "Add Transaction" else "Edit Transaction",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
+                            Row {
+                                if (existing != null && onDelete != null) {
+                                    IconButton(onClick = { onDelete(existing) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = CoralSoft)
+                                    }
+                                }
+                                IconButton(onClick = onDismiss) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = LavenderMuted)
+                                }
+                            }
                         }
-                    }
-                }
-
-                item {
-                    DatePickerField(label = "Date", value = date, onValueChange = { date = it })
-                }
-
-                if (type == EntryType.REVENUE || type == EntryType.EXPENSE) {
-                    item {
-                        Text("Currency", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-                        Spacer(Modifier.height(4.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(currencyOptions) { cur ->
-                                FilterChip(
-                                    selected = selectedCurrency == cur,
+                        Spacer(Modifier.height(8.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(EntryType.values()) { t ->
+                                FintechChip(
+                                    label = t.label,
+                                    selected = type == t,
                                     onClick = {
-                                        selectedCurrency = cur
-                                        if (cur == baseCurrency) {
-                                            origAmountText = ""
-                                            rateText = ""
+                                        type = t
+                                        if (t == EntryType.INVESTMENT || t == EntryType.WITHDRAWAL) {
+                                            selectedCurrency = baseCurrency
                                         }
-                                    },
-                                    label = { Text(cur, fontSize = 12.sp) }
+                                    }
                                 )
                             }
                         }
                     }
-                }
 
-                if (isForeignCurrency) {
-                    item {
-                        OutlinedTextField(
-                            value = origAmountText,
-                            onValueChange = { newVal ->
-                                origAmountText = newVal
-                                val o = newVal.toDoubleOrNull()
-                                val r = rateText.toDoubleOrNull()
-                                if (o != null && r != null && r > 0.0) {
-                                    baseAmountText = "%.2f".format(Locale.US, o * r)
+                    ThinDivider()
+
+                    // Scrollable Form Body (stays scrollable even when keypad is up!)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        DatePickerField(label = "Date", value = date, onValueChange = { date = it })
+
+                        AnimatedVisibility(
+                            visible = type == EntryType.REVENUE || type == EntryType.EXPENSE,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            Column {
+                                Text("Currency", fontSize = 12.sp, color = LavenderMuted)
+                                Spacer(Modifier.height(6.dp))
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(currencyOptions) { cur ->
+                                        FintechChip(
+                                            label = cur,
+                                            selected = selectedCurrency == cur,
+                                            onClick = {
+                                                selectedCurrency = cur
+                                                if (cur == baseCurrency) {
+                                                    origAmountText = ""
+                                                    rateText = ""
+                                                }
+                                            }
+                                        )
+                                    }
                                 }
-                            },
-                            label = { Text("Amount in $selectedCurrency") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            }
+                        }
+
+                        if (isForeignCurrency) {
                             OutlinedTextField(
-                                value = rateText,
-                                onValueChange = { newRate ->
-                                    rateText = newRate
-                                    val o = origAmountText.toDoubleOrNull()
-                                    val r = newRate.toDoubleOrNull()
+                                value = origAmountText,
+                                onValueChange = { newVal ->
+                                    origAmountText = newVal
+                                    val o = newVal.toDoubleOrNull()
+                                    val r = rateText.toDoubleOrNull()
                                     if (o != null && r != null && r > 0.0) {
                                         baseAmountText = "%.2f".format(Locale.US, o * r)
                                     }
                                 },
-                                label = { Text("Rate (1 $selectedCurrency)") },
+                                label = { Text("Amount in $selectedCurrency") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 singleLine = true,
-                                modifier = Modifier.weight(1f)
+                                shape = RoundedCornerShape(16.dp),
+                                colors = darkFieldColors(),
+                                modifier = Modifier.fillMaxWidth()
                             )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = rateText,
+                                    onValueChange = { newRate ->
+                                        rateText = newRate
+                                        val o = origAmountText.toDoubleOrNull()
+                                        val r = newRate.toDoubleOrNull()
+                                        if (o != null && r != null && r > 0.0) {
+                                            baseAmountText = "%.2f".format(Locale.US, o * r)
+                                        }
+                                    },
+                                    label = { Text("Rate (1 $selectedCurrency)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = darkFieldColors(),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = baseAmountText,
+                                    onValueChange = { newBase ->
+                                        baseAmountText = newBase
+                                        val o = origAmountText.toDoubleOrNull()
+                                        val b = newBase.toDoubleOrNull()
+                                        if (o != null && o > 0.0 && b != null) {
+                                            rateText = "%.4f".format(Locale.US, b / o).trimEnd('0').trimEnd('.')
+                                        }
+                                    },
+                                    label = { Text("Final $baseCurrency") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = darkFieldColors(),
+                                    modifier = Modifier.weight(1.2f)
+                                )
+                            }
+                        } else {
                             OutlinedTextField(
                                 value = baseAmountText,
-                                onValueChange = { newBase ->
-                                    baseAmountText = newBase
-                                    val o = origAmountText.toDoubleOrNull()
-                                    val b = newBase.toDoubleOrNull()
-                                    if (o != null && o > 0.0 && b != null) {
-                                        rateText = "%.4f".format(Locale.US, b / o).trimEnd('0').trimEnd('.')
-                                    }
-                                },
-                                label = { Text("Final $baseCurrency") },
+                                onValueChange = { baseAmountText = it },
+                                label = { Text("Amount ($baseCurrency)") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 singleLine = true,
-                                modifier = Modifier.weight(1.2f)
+                                shape = RoundedCornerShape(16.dp),
+                                colors = darkFieldColors(),
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                    }
-                } else {
-                    item {
-                        OutlinedTextField(
-                            value = baseAmountText,
-                            onValueChange = { baseAmountText = it },
-                            label = { Text("Amount ($baseCurrency)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
 
-                if (type == EntryType.INVESTMENT || type == EntryType.WITHDRAWAL) {
-                    item {
-                        Text("Partner", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-                        Spacer(Modifier.height(4.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(state.partners) { p ->
-                                FilterChip(
-                                    selected = partnerId == p.id,
-                                    onClick = { partnerId = p.id },
-                                    label = { Text(p.name) }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (type == EntryType.EXPENSE || type == EntryType.REVENUE) {
-                    item {
-                        Text(
-                            if (type == EntryType.EXPENSE) "Expense Category" else "Revenue Category",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.Gray
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(filteredCategories) { cat ->
-                                FilterChip(
-                                    selected = categoryId == cat.id,
-                                    onClick = { categoryId = cat.id },
-                                    label = { Text(cat.name, fontSize = 12.sp) }
-                                )
-                            }
-                        }
-                    }
-
-                    item {
-                        OutlinedTextField(
-                            value = vendorOrSource,
-                            onValueChange = { vendorOrSource = it },
-                            label = {
-                                Text(if (type == EntryType.EXPENSE) "Vendor / Paid To" else "Network / Client / Source")
-                            },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-
-                if (type == EntryType.EXPENSE) {
-                    item {
-                        Text("Paid By", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-                        Spacer(Modifier.height(4.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item {
-                                FilterChip(
-                                    selected = paidByPartnerId == null,
-                                    onClick = { paidByPartnerId = null },
-                                    label = { Text("Business Cash") }
-                                )
-                            }
-                            items(state.partners) { p ->
-                                FilterChip(
-                                    selected = paidByPartnerId == p.id,
-                                    onClick = { paidByPartnerId = p.id },
-                                    label = { Text(p.name) }
-                                )
-                            }
-                        }
-                    }
-
-                    if (paidByPartnerId != null) {
-                        val payerName = state.partners.find { it.id == paidByPartnerId }?.name ?: "Partner"
-                        item {
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDF4)),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(
-                                        "How should $payerName's payment be recorded?",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Spacer(Modifier.height(6.dp))
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        FilterChip(
-                                            selected = countAsInvestment,
-                                            onClick = { countAsInvestment = true },
-                                            label = { Text("Count as Investment", fontSize = 12.sp) }
-                                        )
-                                        FilterChip(
-                                            selected = !countAsInvestment,
-                                            onClick = { countAsInvestment = false },
-                                            label = { Text("Reimburse Later", fontSize = 12.sp) }
-                                        )
+                        if (type == EntryType.INVESTMENT || type == EntryType.WITHDRAWAL) {
+                            Column {
+                                Text("Partner", fontSize = 12.sp, color = LavenderMuted)
+                                Spacer(Modifier.height(6.dp))
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(state.partners) { p ->
+                                        FintechChip(label = p.name, selected = partnerId == p.id, onClick = { partnerId = p.id })
                                     }
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = if (countAsInvestment)
-                                            "Logs this expense AND adds it to $payerName's Total Invested in one step."
-                                        else
-                                            "Business owes $payerName this amount back in Settle-Up.",
-                                        fontSize = 11.sp,
-                                        color = Color.DarkGray
-                                    )
                                 }
                             }
                         }
-                    }
-                }
 
-                // Payment Method
-                item {
-                    Text("Payment Method", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-                    Spacer(Modifier.height(4.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(PAYMENT_METHODS) { m ->
-                            FilterChip(
-                                selected = paymentMethod == m,
-                                onClick = { paymentMethod = m },
-                                label = { Text(m, fontSize = 12.sp) }
+                        if (type == EntryType.EXPENSE || type == EntryType.REVENUE) {
+                            Column {
+                                Text(
+                                    if (type == EntryType.EXPENSE) "Expense Category" else "Revenue Category",
+                                    fontSize = 12.sp,
+                                    color = LavenderMuted
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(filteredCategories) { cat ->
+                                        FintechChip(label = cat.name, selected = categoryId == cat.id, onClick = { categoryId = cat.id })
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = vendorOrSource,
+                                onValueChange = { vendorOrSource = it },
+                                label = { Text(if (type == EntryType.EXPENSE) "Vendor / Paid To" else "Network / Client / Source") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                colors = darkFieldColors(),
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                    }
-                }
 
-                // Receipt Photo Attachment (Camera / Gallery + Preview)
-                item {
-                    Text("Receipt / Proof Photo (Optional)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-                    Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = { galleryLauncher.launch("image/*") },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Gallery", fontSize = 12.sp) }
-                        OutlinedButton(
-                            onClick = { cameraLauncher.launch(null) },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Camera", fontSize = 12.sp) }
-                    }
-                    if (receiptBitmap != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Image(
-                            bitmap = receiptBitmap.asImageBitmap(),
-                            contentDescription = "Receipt photo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(130.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { showFullReceipt = true }
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            TextButton(onClick = { showFullReceipt = true }) { Text("View Full") }
-                            TextButton(onClick = { receiptBase64 = "" }) {
-                                Text("Remove", color = BrandDanger)
+                        if (type == EntryType.EXPENSE) {
+                            Column {
+                                Text("Paid By", fontSize = 12.sp, color = LavenderMuted)
+                                Spacer(Modifier.height(6.dp))
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    item {
+                                        FintechChip(label = "Business Cash", selected = paidByPartnerId == null, onClick = { paidByPartnerId = null })
+                                    }
+                                    items(state.partners) { p ->
+                                        FintechChip(label = p.name, selected = paidByPartnerId == p.id, onClick = { paidByPartnerId = p.id })
+                                    }
+                                }
+                            }
+
+                            AnimatedVisibility(
+                                visible = paidByPartnerId != null,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut()
+                            ) {
+                                val payerName = state.partners.find { it.id == paidByPartnerId }?.name ?: "Partner"
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(AmethystRoyal.copy(alpha = 0.55f))
+                                        .border(1.dp, CyanElectric.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+                                        .padding(14.dp)
+                                ) {
+                                    Column {
+                                        Text(
+                                            "How should $payerName's payment be recorded?",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            FintechChip(
+                                                label = "Count as Investment",
+                                                selected = countAsInvestment,
+                                                onClick = { countAsInvestment = true },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            FintechChip(
+                                                label = "Reimburse Later",
+                                                selected = !countAsInvestment,
+                                                onClick = { countAsInvestment = false },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(
+                                            text = if (countAsInvestment)
+                                                "Logs this expense AND adds it to $payerName's Total Invested in one step."
+                                            else
+                                                "Logs this expense and tracks a reimbursement owed to $payerName.",
+                                            fontSize = 11.sp,
+                                            color = LavenderMuted
+                                        )
+                                    }
+                                }
                             }
                         }
+
+                        Column {
+                            Text("Payment Method", fontSize = 12.sp, color = LavenderMuted)
+                            Spacer(Modifier.height(6.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(PAYMENT_METHODS) { m ->
+                                    FintechChip(label = m, selected = paymentMethod == m, onClick = { paymentMethod = m })
+                                }
+                            }
+                        }
+
+                        // Receipt Photo
+                        Column {
+                            Text("Receipt / Proof Photo (Optional)", fontSize = 12.sp, color = LavenderMuted)
+                            Spacer(Modifier.height(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { galleryLauncher.launch("image/*") },
+                                    border = BorderStroke(1.dp, AmethystGlow.copy(alpha = 0.35f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Gallery", fontSize = 12.sp) }
+                                OutlinedButton(
+                                    onClick = { cameraLauncher.launch(null) },
+                                    border = BorderStroke(1.dp, AmethystGlow.copy(alpha = 0.35f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Camera", fontSize = 12.sp) }
+                            }
+                            AnimatedVisibility(visible = receiptBitmap != null) {
+                                Column {
+                                    Spacer(Modifier.height(8.dp))
+                                    receiptBitmap?.let { bmp ->
+                                        Image(
+                                            bitmap = bmp.asImageBitmap(),
+                                            contentDescription = "Receipt photo",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(130.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable { showFullReceipt = true }
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        TextButton(onClick = { showFullReceipt = true }) { Text("View Full", color = CyanElectric) }
+                                        TextButton(onClick = { receiptBase64 = "" }) { Text("Remove", color = CoralSoft) }
+                                    }
+                                }
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = note,
+                            onValueChange = { note = it },
+                            label = { Text("Note (Optional)") },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = darkFieldColors(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        if (error != null) {
+                            Text(error!!, color = CoralSoft, fontSize = 12.sp)
+                        }
+                    }
+
+                    ThinDivider()
+
+                    // Footer Buttons
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(AmethystDeep)
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = onDismiss) { Text("Cancel", color = LavenderMuted) }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val finalBaseAmount = baseAmountText.toDoubleOrNull()
+                                val origAmt = origAmountText.toDoubleOrNull() ?: 0.0
+                                val rateVal = rateText.toDoubleOrNull()
+                                    ?: if (origAmt > 0.0 && finalBaseAmount != null) finalBaseAmount / origAmt else 1.0
+
+                                if (finalBaseAmount == null || finalBaseAmount <= 0.0) {
+                                    error = if (isForeignCurrency)
+                                        "Enter the $selectedCurrency amount and either rate or final $baseCurrency."
+                                    else
+                                        "Please enter a valid amount."
+                                    return@Button
+                                }
+                                if ((type == EntryType.INVESTMENT || type == EntryType.WITHDRAWAL) && partnerId == null) {
+                                    error = "Please select a partner."
+                                    return@Button
+                                }
+
+                                val entry = (existing ?: LedgerEntry(type = type, amount = finalBaseAmount)).copy(
+                                    type = type,
+                                    date = date.ifBlank { todayDateString() },
+                                    amount = finalBaseAmount,
+                                    partnerId = if (type == EntryType.INVESTMENT || type == EntryType.WITHDRAWAL) partnerId else null,
+                                    categoryId = if (type == EntryType.EXPENSE || type == EntryType.REVENUE) categoryId else null,
+                                    vendorOrSource = vendorOrSource.trim(),
+                                    paymentMethod = paymentMethod,
+                                    paidByPartnerId = if (type == EntryType.EXPENSE) paidByPartnerId else null,
+                                    countAsInvestment = if (type == EntryType.EXPENSE && paidByPartnerId != null) countAsInvestment else false,
+                                    originalCurrency = if (isForeignCurrency) selectedCurrency else "",
+                                    originalAmount = if (isForeignCurrency) origAmt else 0.0,
+                                    exchangeRate = if (isForeignCurrency) rateVal else 1.0,
+                                    hasProof = receiptBase64.isNotBlank(),
+                                    receiptImageBase64 = receiptBase64,
+                                    note = note.trim()
+                                )
+                                onSave(entry)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyanElectric, contentColor = JetBlack),
+                            shape = RoundedCornerShape(14.dp)
+                        ) { Text("Save", fontWeight = FontWeight.Bold) }
                     }
                 }
-
-                item {
-                    OutlinedTextField(
-                        value = note,
-                        onValueChange = { note = it },
-                        label = { Text("Note (Optional)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                if (error != null) {
-                    item { Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-                }
             }
-        },
-        confirmButton = {
-            Button(onClick = {
-                val finalBaseAmount = baseAmountText.toDoubleOrNull()
-                val origAmt = origAmountText.toDoubleOrNull() ?: 0.0
-                val rateVal = rateText.toDoubleOrNull() ?: if (origAmt > 0.0 && finalBaseAmount != null) finalBaseAmount / origAmt else 1.0
-
-                if (finalBaseAmount == null || finalBaseAmount <= 0.0) {
-                    error = if (isForeignCurrency)
-                        "Enter the $selectedCurrency amount and either the exchange rate or final $baseCurrency amount."
-                    else
-                        "Please enter a valid amount."
-                    return@Button
-                }
-                if ((type == EntryType.INVESTMENT || type == EntryType.WITHDRAWAL) && partnerId == null) {
-                    error = "Please select a partner."
-                    return@Button
-                }
-
-                val entry = (existing ?: LedgerEntry(type = type, amount = finalBaseAmount)).copy(
-                    type = type,
-                    date = date.ifBlank { todayDateString() },
-                    amount = finalBaseAmount,
-                    partnerId = if (type == EntryType.INVESTMENT || type == EntryType.WITHDRAWAL) partnerId else null,
-                    categoryId = if (type == EntryType.EXPENSE || type == EntryType.REVENUE) categoryId else null,
-                    vendorOrSource = vendorOrSource.trim(),
-                    paymentMethod = paymentMethod,
-                    paidByPartnerId = if (type == EntryType.EXPENSE) paidByPartnerId else null,
-                    countAsInvestment = if (type == EntryType.EXPENSE && paidByPartnerId != null) countAsInvestment else false,
-                    originalCurrency = if (isForeignCurrency) selectedCurrency else "",
-                    originalAmount = if (isForeignCurrency) origAmt else 0.0,
-                    exchangeRate = if (isForeignCurrency) rateVal else 1.0,
-                    hasProof = receiptBase64.isNotBlank(),
-                    receiptImageBase64 = receiptBase64,
-                    note = note.trim()
-                )
-                onSave(entry)
-            }) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
-    )
+    }
 
     if (showFullReceipt && receiptBitmap != null) {
         AlertDialog(
             onDismissRequest = { showFullReceipt = false },
-            title = { Text("Receipt Photo") },
+            containerColor = AmethystElevated,
+            title = { Text("Receipt Photo", color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
                 Image(
                     bitmap = receiptBitmap.asImageBitmap(),
                     contentDescription = "Full receipt",
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showFullReceipt = false }) { Text("Close") }
+                TextButton(onClick = { showFullReceipt = false }) { Text("Close", color = CyanElectric) }
             }
         )
     }
